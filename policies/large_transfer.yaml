@@ -1,0 +1,9 @@
+id: large-transfer
+action: bank_transfer
+
+condition:
+  field: amount
+  operator: greater_than
+  value: 10000
+
+decision: REQUIRE_APPROVAL
