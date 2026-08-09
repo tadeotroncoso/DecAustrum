@@ -1,5 +1,5 @@
 from typing import Any
-
+from app.policy_engine import evaluate_policy
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -22,13 +22,10 @@ def health_check():
 
 @app.post("/v1/authorize")
 def authorize(request: AuthorizationRequest):
-    if (
-        request.action == "refund_payment"
-        and request.context.get("amount", 0) > 500
-    ):
-        decision = "REQUIRE_APPROVAL"
-    else:
-        decision = "ALLOW"
+    decision = evaluate_policy(
+        request.action,
+        request.context,
+    )
 
     return {
         "decision": decision,
