@@ -1,0 +1,9 @@
+id: refund-limit
+action: refund_payment
+
+condition:
+  field: amount
+  operator: greater_than
+  value: 500
+
+decision: REQUIRE_APPROVAL
