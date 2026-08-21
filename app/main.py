@@ -30,6 +30,7 @@ def authorize(request: AuthorizationRequest):
     return {
         "decision": evaluation.decision,
         "policy": evaluation.policy_id,
+        "reason": evaluation.reason,
         "agent": request.agent,
         "action": request.action,
         "context": request.context,

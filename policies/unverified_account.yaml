@@ -7,3 +7,5 @@ condition:
   value: false
 
 decision: DENY
+
+reason: Bank transfers from unverified accounts are denied.

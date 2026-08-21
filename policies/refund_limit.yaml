@@ -7,3 +7,5 @@ condition:
   value: 500
 
 decision: REQUIRE_APPROVAL
+
+reason: Refunds above 500 require approval.

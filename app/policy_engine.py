@@ -24,6 +24,7 @@ def evaluate_policy(
 
     final_decision = "ALLOW"
     winning_policy_id = None
+    winning_reason = "No policy required approval or denial."
 
     for policy in policies:
         if action != policy.action:
@@ -49,8 +50,12 @@ def evaluate_policy(
             ):
                 final_decision = policy_decision
                 winning_policy_id = policy.id
+                winning_reason = policy.reason
+
+
 
     return PolicyEvaluation(
     decision=final_decision,
     policy_id=winning_policy_id,
+    reason=winning_reason,
     )

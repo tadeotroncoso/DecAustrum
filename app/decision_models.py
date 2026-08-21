@@ -13,3 +13,4 @@ Decision = Literal[
 class PolicyEvaluation(BaseModel):
     decision: Decision
     policy_id: str | None = None
+    reason: str

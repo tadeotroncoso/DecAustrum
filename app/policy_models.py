@@ -21,3 +21,4 @@ class Policy(BaseModel):
     action: str
     condition: PolicyCondition
     decision: Decision
+    reason: str
