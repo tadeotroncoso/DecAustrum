@@ -20,26 +20,22 @@ def evaluate_policy(action: str, context: dict[str, Any]) -> str:
     final_decision = "ALLOW"
 
     for policy in policies:
-        if action != policy["action"]:
+        if action != policy.action:
             continue
 
-        condition = policy["condition"]
+        condition = policy.condition
 
-        field = condition["field"]
-        operator = condition["operator"]
-        expected_value = condition["value"]
-
-        actual_value = context.get(field)
+        actual_value = context.get(condition.field)
 
         if (
             actual_value is not None
             and evaluate_operator(
-                operator,
+                condition.operator,
                 actual_value,
-                expected_value,
+                condition.value,
             )
         ):
-            policy_decision = policy["decision"]
+            policy_decision = policy.decision
 
             if (
                 DECISION_PRIORITY[policy_decision]
