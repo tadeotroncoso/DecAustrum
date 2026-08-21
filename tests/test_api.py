@@ -183,3 +183,28 @@ def test_authorize_rejects_non_numeric_amount():
         "field": "amount",
         "operator": "greater_than",
     }
+
+
+def test_authorize_rejects_boolean_field_with_string_value():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 5000,
+                "account_verified": "false",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "invalid_policy_context",
+        "message": (
+            "Context field 'account_verified' is incompatible "
+            "with operator 'equals'."
+        ),
+        "field": "account_verified",
+        "operator": "equals",
+    }

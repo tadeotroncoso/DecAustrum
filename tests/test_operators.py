@@ -1,4 +1,5 @@
 from app.operators import evaluate_operator
+import pytest
 
 
 def test_greater_than():
@@ -19,3 +20,19 @@ def test_equals():
 def test_not_equals():
     assert evaluate_operator("not_equals", "US", "EU") is True
     assert evaluate_operator("not_equals", "EU", "EU") is False
+
+def test_incompatible_types_raise_error():
+    with pytest.raises(TypeError):
+        evaluate_operator(
+            "equals",
+            "false",
+            False,
+        )
+
+
+def test_numeric_types_are_compatible():
+    assert evaluate_operator(
+        "greater_than",
+        10.5,
+        10,
+    ) is True
