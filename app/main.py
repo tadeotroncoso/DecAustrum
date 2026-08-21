@@ -1,42 +1,20 @@
-from typing import Annotated, Any
 from app.policy_engine import evaluate_policy
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, StringConstraints
-from app.decision_models import ConditionEvidence, Decision
+
+
 from app.exceptions import InvalidPolicyContextError
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
+from app.authorization_models import (
+    AuthorizationRequest,
+    AuthorizationResponse,
+)
 
 app = FastAPI(
     title="RegTrace API",
     version="0.1.0",
 )
-
-NonEmptyString = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        min_length=1,
-    ),
-]
-
-class AuthorizationRequest(BaseModel):
-    agent: NonEmptyString
-    action: NonEmptyString
-    context: dict[str, Any]
-
-class AuthorizationResponse(BaseModel):
-    decision_id: UUID
-    evaluated_at: datetime
-    decision: Decision
-    policy: str | None
-    policy_version: int | None
-    reason: str
-    evidence: ConditionEvidence | None
-    agent: str
-    action: str
-    context: dict[str, Any]
 
 @app.get("/health")
 def health_check():
