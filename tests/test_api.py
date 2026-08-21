@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from datetime import datetime
+from uuid import UUID
+
 from app.main import app
 
 
@@ -211,3 +214,39 @@ def test_authorize_rejects_boolean_field_with_string_value():
         "field": "account_verified",
         "operator": "equals",
     }
+
+
+def test_authorize_returns_unique_decision_metadata():
+    payload = {
+        "agent": "support-agent",
+        "action": "refund_payment",
+        "context": {
+            "amount": 300,
+        },
+    }
+
+    first_response = client.post(
+        "/v1/authorize",
+        json=payload,
+    )
+    second_response = client.post(
+        "/v1/authorize",
+        json=payload,
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_data = first_response.json()
+    second_data = second_response.json()
+
+    UUID(first_data["decision_id"])
+    UUID(second_data["decision_id"])
+
+    assert first_data["decision_id"] != second_data["decision_id"]
+
+    evaluated_at = datetime.fromisoformat(
+        first_data["evaluated_at"].replace("Z", "+00:00")
+    )
+
+    assert evaluated_at.tzinfo is not None
