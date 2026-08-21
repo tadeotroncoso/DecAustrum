@@ -34,4 +34,9 @@ def authorize(request: AuthorizationRequest):
         "agent": request.agent,
         "action": request.action,
         "context": request.context,
+        "evidence": (
+            evaluation.evidence.model_dump()
+            if evaluation.evidence is not None
+            else None
+        ),
     }

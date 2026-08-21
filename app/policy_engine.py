@@ -3,7 +3,7 @@ from typing import Any
 
 from app.operators import evaluate_operator
 from app.policy_loader import load_policies
-from app.decision_models import PolicyEvaluation
+from app.decision_models import ConditionEvidence, PolicyEvaluation
 
 
 POLICIES_DIRECTORY = Path("policies")
@@ -25,6 +25,7 @@ def evaluate_policy(
     final_decision = "ALLOW"
     winning_policy_id = None
     winning_reason = "No policy required approval or denial."
+    winning_evidence = None
 
     for policy in policies:
         if action != policy.action:
@@ -51,11 +52,18 @@ def evaluate_policy(
                 final_decision = policy_decision
                 winning_policy_id = policy.id
                 winning_reason = policy.reason
+                winning_evidence = ConditionEvidence(
+                    field=condition.field,
+                    operator=condition.operator,
+                    actual_value=actual_value,
+                    expected_value=condition.value,
+                )
 
 
 
     return PolicyEvaluation(
-    decision=final_decision,
-    policy_id=winning_policy_id,
-    reason=winning_reason,
+        decision=final_decision,
+        policy_id=winning_policy_id,
+        reason=winning_reason,
+        evidence=winning_evidence,
     )

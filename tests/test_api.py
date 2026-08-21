@@ -28,6 +28,12 @@ def test_authorize_returns_deny_with_winning_policy():
     assert data["reason"] == (
         "Bank transfers from unverified accounts are denied."
     )
+    assert data["evidence"] == {
+        "field": "account_verified",
+        "operator": "equals",
+        "actual_value": False,
+        "expected_value": False,
+    }
 
 
 def test_authorize_returns_require_approval_with_winning_policy():
@@ -52,6 +58,12 @@ def test_authorize_returns_require_approval_with_winning_policy():
     assert data["reason"] == (
         "Bank transfers above 10000 require approval."
     )
+    assert data["evidence"] == {
+        "field": "amount",
+        "operator": "greater_than",
+        "actual_value": 25000,
+        "expected_value": 10000,
+    }
 
 
 def test_authorize_returns_allow_without_policy():
@@ -75,3 +87,4 @@ def test_authorize_returns_allow_without_policy():
     assert data["reason"] == (
         "No policy required approval or denial."
     )
+    assert data["evidence"] is None
