@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app.decision_models import Decision
+
 
 class PolicyCondition(BaseModel):
     field: str
@@ -18,8 +20,4 @@ class Policy(BaseModel):
     id: str
     action: str
     condition: PolicyCondition
-    decision: Literal[
-        "ALLOW",
-        "REQUIRE_APPROVAL",
-        "DENY",
-    ]
+    decision: Decision

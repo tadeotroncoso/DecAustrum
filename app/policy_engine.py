@@ -3,6 +3,7 @@ from typing import Any
 
 from app.operators import evaluate_operator
 from app.policy_loader import load_policies
+from app.decision_models import PolicyEvaluation
 
 
 POLICIES_DIRECTORY = Path("policies")
@@ -17,7 +18,7 @@ DECISION_PRIORITY = {
 def evaluate_policy(
     action: str,
     context: dict[str, Any],
-) -> tuple[str, str | None]:
+) -> PolicyEvaluation:
 
     policies = load_policies(POLICIES_DIRECTORY)
 
@@ -49,4 +50,7 @@ def evaluate_policy(
                 final_decision = policy_decision
                 winning_policy_id = policy.id
 
-    return final_decision, winning_policy_id
+    return PolicyEvaluation(
+    decision=final_decision,
+    policy_id=winning_policy_id,
+    )

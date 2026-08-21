@@ -22,14 +22,14 @@ def health_check():
 
 @app.post("/v1/authorize")
 def authorize(request: AuthorizationRequest):
-    decision, policy_id = evaluate_policy(
-        request.action,
-        request.context,
-    )
+    evaluation = evaluate_policy(
+    request.action,
+    request.context,
+    )   
 
     return {
-        "decision": decision,
-        "policy": policy_id,
+        "decision": evaluation.decision,
+        "policy": evaluation.policy_id,
         "agent": request.agent,
         "action": request.action,
         "context": request.context,
