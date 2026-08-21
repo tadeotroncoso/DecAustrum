@@ -126,3 +126,33 @@ def test_authorize_rejects_non_object_context():
         error["loc"] == ["body", "context"]
         for error in data["detail"]
     )
+
+
+def test_authorize_rejects_empty_agent():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 5000,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_authorize_rejects_blank_action():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "   ",
+            "context": {
+                "amount": 5000,
+            },
+        },
+    )
+
+    assert response.status_code == 422

@@ -1,7 +1,7 @@
-from typing import Any
+from typing import Annotated, Any
 from app.policy_engine import evaluate_policy
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 from app.decision_models import ConditionEvidence, Decision
 
 
@@ -10,10 +10,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
+NonEmptyString = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+    ),
+]
 
 class AuthorizationRequest(BaseModel):
-    agent: str
-    action: str
+    agent: NonEmptyString
+    action: NonEmptyString
     context: dict[str, Any]
 
 class AuthorizationResponse(BaseModel):
