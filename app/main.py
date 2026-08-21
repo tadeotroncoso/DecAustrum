@@ -1,8 +1,9 @@
 from typing import Annotated, Any
 from app.policy_engine import evaluate_policy
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, StringConstraints
 from app.decision_models import ConditionEvidence, Decision
+from app.exceptions import InvalidPolicyContextError
 
 
 app = FastAPI(
@@ -36,14 +37,28 @@ class AuthorizationResponse(BaseModel):
 def health_check():
     return {"status": "ok"}
 
-@app.post("/v1/authorize", response_model=AuthorizationResponse,)
+@app.post(
+    "/v1/authorize",
+    response_model=AuthorizationResponse,
+)
 def authorize(
     request: AuthorizationRequest,
-    ) -> AuthorizationResponse:
-    evaluation = evaluate_policy(
-    request.action,
-    request.context,
-    )   
+) -> AuthorizationResponse:
+    try:
+        evaluation = evaluate_policy(
+            request.action,
+            request.context,
+        )
+    except InvalidPolicyContextError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_policy_context",
+                "message": str(exc),
+                "field": exc.field,
+                "operator": exc.operator,
+            },
+        ) from exc
 
     return AuthorizationResponse(
         decision=evaluation.decision,

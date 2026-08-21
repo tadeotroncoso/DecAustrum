@@ -4,6 +4,7 @@ from typing import Any
 from app.operators import evaluate_operator
 from app.policy_loader import load_policies
 from app.decision_models import ConditionEvidence, PolicyEvaluation
+from app.exceptions import InvalidPolicyContextError
 
 
 POLICIES_DIRECTORY = Path("policies")
@@ -19,7 +20,6 @@ def evaluate_policy(
     action: str,
     context: dict[str, Any],
 ) -> PolicyEvaluation:
-
     policies = load_policies(POLICIES_DIRECTORY)
 
     final_decision = "ALLOW"
@@ -32,34 +32,41 @@ def evaluate_policy(
             continue
 
         condition = policy.condition
-
         actual_value = context.get(condition.field)
 
-        if (
-            actual_value is not None
-            and evaluate_operator(
+        if actual_value is None:
+            continue
+
+        try:
+            condition_matches = evaluate_operator(
                 condition.operator,
                 actual_value,
                 condition.value,
             )
+        except TypeError as exc:
+            raise InvalidPolicyContextError(
+                field=condition.field,
+                operator=condition.operator,
+            ) from exc
+
+        if not condition_matches:
+            continue
+
+        policy_decision = policy.decision
+
+        if (
+            DECISION_PRIORITY[policy_decision]
+            > DECISION_PRIORITY[final_decision]
         ):
-            policy_decision = policy.decision
-
-            if (
-                DECISION_PRIORITY[policy_decision]
-                > DECISION_PRIORITY[final_decision]
-            ):
-                final_decision = policy_decision
-                winning_policy_id = policy.id
-                winning_reason = policy.reason
-                winning_evidence = ConditionEvidence(
-                    field=condition.field,
-                    operator=condition.operator,
-                    actual_value=actual_value,
-                    expected_value=condition.value,
-                )
-
-
+            final_decision = policy_decision
+            winning_policy_id = policy.id
+            winning_reason = policy.reason
+            winning_evidence = ConditionEvidence(
+                field=condition.field,
+                operator=condition.operator,
+                actual_value=actual_value,
+                expected_value=condition.value,
+            )
 
     return PolicyEvaluation(
         decision=final_decision,

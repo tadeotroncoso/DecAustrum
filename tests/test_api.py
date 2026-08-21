@@ -156,3 +156,30 @@ def test_authorize_rejects_blank_action():
     )
 
     assert response.status_code == 422
+
+
+
+def test_authorize_rejects_non_numeric_amount():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": "a lot",
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json()["detail"] == {
+        "code": "invalid_policy_context",
+        "message": (
+            "Context field 'amount' is incompatible "
+            "with operator 'greater_than'."
+        ),
+        "field": "amount",
+        "operator": "greater_than",
+    }
