@@ -88,3 +88,41 @@ def test_authorize_returns_allow_without_policy():
         "No policy required approval or denial."
     )
     assert data["evidence"] is None
+
+def test_authorize_rejects_request_without_agent():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "action": "bank_transfer",
+            "context": {
+                "amount": 5000,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+    data = response.json()
+
+    assert data["detail"]
+    assert data["detail"][0]["loc"] == ["body", "agent"]
+
+
+def test_authorize_rejects_non_object_context():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": ["invalid", "context"],
+        },
+    )
+
+    assert response.status_code == 422
+
+    data = response.json()
+
+    assert any(
+        error["loc"] == ["body", "context"]
+        for error in data["detail"]
+    )
