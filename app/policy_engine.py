@@ -14,10 +14,15 @@ DECISION_PRIORITY = {
 }
 
 
-def evaluate_policy(action: str, context: dict[str, Any]) -> str:
+def evaluate_policy(
+    action: str,
+    context: dict[str, Any],
+) -> tuple[str, str | None]:
+
     policies = load_policies(POLICIES_DIRECTORY)
 
     final_decision = "ALLOW"
+    winning_policy_id = None
 
     for policy in policies:
         if action != policy.action:
@@ -42,5 +47,6 @@ def evaluate_policy(action: str, context: dict[str, Any]) -> str:
                 > DECISION_PRIORITY[final_decision]
             ):
                 final_decision = policy_decision
+                winning_policy_id = policy.id
 
-    return final_decision
+    return final_decision, winning_policy_id
