@@ -1,0 +1,9 @@
+id: unverified-account
+action: bank_transfer
+
+condition:
+  field: account_verified
+  operator: equals
+  value: false
+
+decision: DENY

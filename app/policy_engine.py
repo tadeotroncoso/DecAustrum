@@ -1,14 +1,23 @@
 from pathlib import Path
 from typing import Any
 
+from app.operators import evaluate_operator
 from app.policy_loader import load_policies
 
 
 POLICIES_DIRECTORY = Path("policies")
 
+DECISION_PRIORITY = {
+    "ALLOW": 0,
+    "REQUIRE_APPROVAL": 1,
+    "DENY": 2,
+}
+
 
 def evaluate_policy(action: str, context: dict[str, Any]) -> str:
     policies = load_policies(POLICIES_DIRECTORY)
+
+    final_decision = "ALLOW"
 
     for policy in policies:
         if action != policy["action"]:
@@ -23,10 +32,19 @@ def evaluate_policy(action: str, context: dict[str, Any]) -> str:
         actual_value = context.get(field)
 
         if (
-            operator == "greater_than"
-            and actual_value is not None
-            and actual_value > expected_value
+            actual_value is not None
+            and evaluate_operator(
+                operator,
+                actual_value,
+                expected_value,
+            )
         ):
-            return policy["decision"]
+            policy_decision = policy["decision"]
 
-    return "ALLOW"
+            if (
+                DECISION_PRIORITY[policy_decision]
+                > DECISION_PRIORITY[final_decision]
+            ):
+                final_decision = policy_decision
+
+    return final_decision

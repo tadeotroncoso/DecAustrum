@@ -44,3 +44,37 @@ def test_unknown_action_is_allowed():
     )
 
     assert decision == "ALLOW"
+
+def test_unverified_account_is_denied():
+    decision = evaluate_policy(
+        "bank_transfer",
+        {
+            "amount": 5000,
+            "account_verified": False,
+        },
+    )
+
+    assert decision == "DENY"
+
+
+def test_deny_overrides_require_approval():
+    decision = evaluate_policy(
+        "bank_transfer",
+        {
+            "amount": 25000,
+            "account_verified": False,
+        },
+    )
+
+    assert decision == "DENY"
+
+def test_verified_large_transfer_requires_approval():
+    decision = evaluate_policy(
+        "bank_transfer",
+        {
+            "amount": 25000,
+            "account_verified": True,
+        },
+    )
+
+    assert decision == "REQUIRE_APPROVAL"
