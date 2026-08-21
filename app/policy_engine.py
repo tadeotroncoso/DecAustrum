@@ -26,6 +26,7 @@ def evaluate_policy(
     winning_policy_id = None
     winning_reason = "No policy required approval or denial."
     winning_evidence = None
+    winning_policy_version = None
 
     for policy in policies:
         if action != policy.action:
@@ -61,6 +62,7 @@ def evaluate_policy(
             final_decision = policy_decision
             winning_policy_id = policy.id
             winning_reason = policy.reason
+            winning_policy_version = policy.version
             winning_evidence = ConditionEvidence(
                 field=condition.field,
                 operator=condition.operator,
@@ -71,6 +73,7 @@ def evaluate_policy(
     return PolicyEvaluation(
         decision=final_decision,
         policy_id=winning_policy_id,
+        policy_version=winning_policy_version,
         reason=winning_reason,
         evidence=winning_evidence,
     )

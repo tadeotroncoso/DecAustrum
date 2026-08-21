@@ -1,4 +1,5 @@
 id: unverified-account
+version: 1
 action: bank_transfer
 
 condition:

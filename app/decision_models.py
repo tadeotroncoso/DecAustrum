@@ -21,3 +21,4 @@ class PolicyEvaluation(BaseModel):
     policy_id: str | None = None
     reason: str
     evidence: ConditionEvidence | None = None
+    policy_version: int | None = None

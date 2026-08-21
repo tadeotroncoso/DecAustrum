@@ -34,6 +34,7 @@ def test_authorize_returns_deny_with_winning_policy():
         "actual_value": False,
         "expected_value": False,
     }
+    assert data["policy_version"] == 1
 
 
 def test_authorize_returns_require_approval_with_winning_policy():
@@ -64,6 +65,7 @@ def test_authorize_returns_require_approval_with_winning_policy():
         "actual_value": 25000,
         "expected_value": 10000,
     }
+    assert data["policy_version"] == 1
 
 
 def test_authorize_returns_allow_without_policy():
@@ -88,6 +90,7 @@ def test_authorize_returns_allow_without_policy():
         "No policy required approval or denial."
     )
     assert data["evidence"] is None
+    assert data["policy_version"] is None
 
 def test_authorize_rejects_request_without_agent():
     response = client.post(

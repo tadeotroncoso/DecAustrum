@@ -32,6 +32,7 @@ class AuthorizationResponse(BaseModel):
     agent: str
     action: str
     context: dict[str, Any]
+    policy_version: int | None
 
 @app.get("/health")
 def health_check():
@@ -68,4 +69,5 @@ def authorize(
         agent=request.agent,
         action=request.action,
         context=request.context,
+        policy_version=evaluation.policy_version,
     )

@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.decision_models import Decision
 
@@ -18,6 +18,7 @@ class PolicyCondition(BaseModel):
 
 class Policy(BaseModel):
     id: str
+    version: int = Field(ge=1)
     action: str
     condition: PolicyCondition
     decision: Decision
