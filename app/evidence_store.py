@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 from uuid import UUID
 
+from app.approval_models import ApprovalRecord
 from app.authorization_models import AuthorizationResponse
 
 
@@ -185,3 +186,69 @@ class EvidenceStore:
             ).fetchone()
 
         return int(row[0])
+
+    @staticmethod
+    def _row_to_approval(
+        row: sqlite3.Row,
+    ) -> ApprovalRecord:
+        return ApprovalRecord.model_validate(
+            {
+                "decision_id": row["decision_id"],
+                "status": row["status"],
+                "requested_at": row["requested_at"],
+                "resolved_at": row["resolved_at"],
+                "resolved_by": row["resolved_by"],
+            }
+        )
+
+
+    def save_approval(
+        self,
+        approval: ApprovalRecord,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO approval_requests (
+                    decision_id,
+                    status,
+                    requested_at,
+                    resolved_at,
+                    resolved_by
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(approval.decision_id),
+                    approval.status,
+                    approval.requested_at.isoformat(),
+                    (
+                        approval.resolved_at.isoformat()
+                        if approval.resolved_at is not None
+                        else None
+                    ),
+                    approval.resolved_by,
+                ),
+            )
+
+
+    def get_approval(
+        self,
+        decision_id: UUID,
+    ) -> ApprovalRecord | None:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT *
+                FROM approval_requests
+                WHERE decision_id = ?
+                """,
+                (str(decision_id),),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_approval(row)

@@ -1,7 +1,9 @@
 import json
 import sqlite3
+import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from app.approval_models import ApprovalRecord
 
 from app.authorization_models import AuthorizationResponse
 from app.decision_models import ConditionEvidence
@@ -202,3 +204,41 @@ def test_initialize_creates_approval_requests_table(
     assert foreign_keys[0][2] == "authorization_decisions"
     assert foreign_keys[0][3] == "decision_id"
     assert foreign_keys[0][4] == "decision_id"
+
+
+def test_save_and_get_pending_approval(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    authorization = build_authorization()
+    store.save(authorization)
+
+    approval = ApprovalRecord(
+        decision_id=authorization.decision_id,
+        status="PENDING",
+        requested_at=authorization.evaluated_at,
+    )
+
+    store.save_approval(approval)
+
+    stored_approval = store.get_approval(
+        authorization.decision_id
+    )
+
+    assert stored_approval == approval
+
+
+def test_approval_requires_existing_decision(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    approval = ApprovalRecord(
+        decision_id=uuid4(),
+        status="PENDING",
+        requested_at=datetime.now(timezone.utc),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.save_approval(approval)
