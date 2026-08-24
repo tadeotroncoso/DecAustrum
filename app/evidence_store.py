@@ -3,8 +3,18 @@ import sqlite3
 from pathlib import Path
 from uuid import UUID
 
-from app.approval_models import ApprovalRecord
 from app.authorization_models import AuthorizationResponse
+
+from datetime import datetime
+
+from app.approval_models import (
+    ApprovalRecord,
+    ApprovalResolutionStatus,
+)
+from app.exceptions import (
+    ApprovalAlreadyResolvedError,
+    ApprovalNotFoundError,
+)
 
 
 CREATE_DECISIONS_TABLE = """
@@ -297,3 +307,62 @@ class EvidenceStore:
                     connection,
                     approval,
                 )
+
+    def resolve_approval(
+        self,
+        decision_id: UUID,
+        status: ApprovalResolutionStatus,
+        resolved_by: str,
+        resolved_at: datetime,
+    ) -> ApprovalRecord:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            result = connection.execute(
+                """
+                UPDATE approval_requests
+                SET
+                    status = ?,
+                    resolved_at = ?,
+                    resolved_by = ?
+                WHERE decision_id = ?
+                AND status = 'PENDING'
+                """,
+                (
+                    status,
+                    resolved_at.isoformat(),
+                    resolved_by,
+                    str(decision_id),
+                ),
+            )
+
+            if result.rowcount == 0:
+                row = connection.execute(
+                    """
+                    SELECT *
+                    FROM approval_requests
+                    WHERE decision_id = ?
+                    """,
+                    (str(decision_id),),
+                ).fetchone()
+
+                if row is None:
+                    raise ApprovalNotFoundError(decision_id)
+
+                current_approval = self._row_to_approval(row)
+
+                raise ApprovalAlreadyResolvedError(
+                    decision_id=decision_id,
+                    current_status=current_approval.status,
+                )
+
+            row = connection.execute(
+                """
+                SELECT *
+                FROM approval_requests
+                WHERE decision_id = ?
+                """,
+                (str(decision_id),),
+            ).fetchone()
+
+        return self._row_to_approval(row)

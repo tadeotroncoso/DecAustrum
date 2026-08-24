@@ -9,6 +9,11 @@ from app.authorization_models import AuthorizationResponse
 from app.decision_models import ConditionEvidence
 from app.evidence_store import EvidenceStore
 
+from app.exceptions import (
+    ApprovalAlreadyResolvedError,
+    ApprovalNotFoundError,
+)
+
 def build_authorization() -> AuthorizationResponse:
     return AuthorizationResponse(
         decision_id=uuid4(),
@@ -266,3 +271,80 @@ def test_combined_save_rolls_back_on_mismatched_approval(
         )
 
     assert store.get(authorization.decision_id) is None
+
+def test_resolve_pending_approval(tmp_path):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    authorization = build_authorization()
+    approval = ApprovalRecord(
+        decision_id=authorization.decision_id,
+        status="PENDING",
+        requested_at=authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=authorization,
+        approval=approval,
+    )
+
+    resolved_at = (
+        approval.requested_at
+        + timedelta(minutes=1)
+    )
+
+    resolved = store.resolve_approval(
+        decision_id=approval.decision_id,
+        status="APPROVED",
+        resolved_by="security-admin",
+        resolved_at=resolved_at,
+    )
+
+    assert resolved.status == "APPROVED"
+    assert resolved.resolved_by == "security-admin"
+    assert resolved.resolved_at == resolved_at
+
+
+def test_cannot_resolve_approval_twice(tmp_path):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    authorization = build_authorization()
+    approval = ApprovalRecord(
+        decision_id=authorization.decision_id,
+        status="PENDING",
+        requested_at=authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=authorization,
+        approval=approval,
+    )
+
+    store.resolve_approval(
+        decision_id=approval.decision_id,
+        status="APPROVED",
+        resolved_by="first-admin",
+        resolved_at=approval.requested_at,
+    )
+
+    with pytest.raises(ApprovalAlreadyResolvedError):
+        store.resolve_approval(
+            decision_id=approval.decision_id,
+            status="REJECTED",
+            resolved_by="second-admin",
+            resolved_at=approval.requested_at,
+        )
+
+
+def test_resolve_unknown_approval_fails(tmp_path):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    with pytest.raises(ApprovalNotFoundError):
+        store.resolve_approval(
+            decision_id=uuid4(),
+            status="APPROVED",
+            resolved_by="security-admin",
+            resolved_at=datetime.now(timezone.utc),
+        )

@@ -11,6 +11,10 @@ ApprovalStatus = Literal[
     "REJECTED",
 ]
 
+ApprovalResolutionStatus = Literal[
+    "APPROVED",
+    "REJECTED",
+]
 
 class ApprovalRecord(BaseModel):
     decision_id: UUID
