@@ -33,3 +33,9 @@ class AuthorizationResponse(BaseModel):
     agent: str
     action: str
     context: dict[str, Any]
+
+class AuthorizationDecisionPage(BaseModel):
+    items: list[AuthorizationResponse]
+    total: int
+    limit: int
+    offset: int

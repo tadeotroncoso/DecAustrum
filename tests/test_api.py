@@ -372,3 +372,58 @@ def test_invalid_authorization_is_not_persisted(
         ).fetchone()[0]
 
     assert stored_decisions == 0
+
+def test_list_decisions_returns_empty_page():
+    response = client.get("/v1/decisions")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "total": 0,
+        "limit": 20,
+        "offset": 0,
+    }
+
+
+def test_list_decisions_returns_paginated_results():
+    for amount in (100, 200, 300):
+        create_response = client.post(
+            "/v1/authorize",
+            json={
+                "agent": "support-agent",
+                "action": "refund_payment",
+                "context": {
+                    "amount": amount,
+                },
+            },
+        )
+
+        assert create_response.status_code == 200
+
+    response = client.get(
+        "/v1/decisions?limit=2&offset=1"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total"] == 3
+    assert data["limit"] == 2
+    assert data["offset"] == 1
+    assert len(data["items"]) == 2
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "limit=0",
+        "limit=101",
+        "offset=-1",
+    ],
+)
+def test_list_decisions_rejects_invalid_pagination(query):
+    response = client.get(
+        f"/v1/decisions?{query}"
+    )
+
+    assert response.status_code == 422

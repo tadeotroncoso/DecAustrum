@@ -3,15 +3,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException
-
-from app.authorization_models import (
-    AuthorizationRequest,
-    AuthorizationResponse,
-)
+from fastapi import Depends, FastAPI, HTTPException, Query
 from app.evidence_store import EvidenceStore
 from app.exceptions import InvalidPolicyContextError
 from app.policy_engine import evaluate_policy
+from app.authorization_models import (
+    AuthorizationDecisionPage,
+    AuthorizationRequest,
+    AuthorizationResponse,
+)
 
 
 DATABASE_PATH = Path("data/regtrace.db")
@@ -80,6 +80,26 @@ def authorize(
     store.save(authorization)
 
     return authorization
+
+
+@app.get(
+    "/v1/decisions",
+    response_model=AuthorizationDecisionPage,
+)
+def list_authorization_decisions(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> AuthorizationDecisionPage:
+    return AuthorizationDecisionPage(
+        items=store.list_decisions(
+            limit=limit,
+            offset=offset,
+        ),
+        total=store.count(),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get(
