@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 import json
-
+from uuid import UUID
 from app.authorization_models import AuthorizationResponse
 
 
@@ -81,3 +81,42 @@ class EvidenceStore:
                     context_json,
                 ),
             )
+            
+    def get(
+        self,
+        decision_id: UUID,
+    ) -> AuthorizationResponse | None:
+        with sqlite3.connect(self.database_path) as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT *
+                FROM authorization_decisions
+                WHERE decision_id = ?
+                """,
+                (str(decision_id),),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        evidence = None
+
+        if row["evidence_json"] is not None:
+            evidence = json.loads(row["evidence_json"])
+
+        return AuthorizationResponse.model_validate(
+            {
+                "decision_id": row["decision_id"],
+                "evaluated_at": row["evaluated_at"],
+                "decision": row["decision"],
+                "policy": row["policy_id"],
+                "policy_version": row["policy_version"],
+                "reason": row["reason"],
+                "evidence": evidence,
+                "agent": row["agent"],
+                "action": row["action"],
+                "context": json.loads(row["context_json"]),
+            }
+        )

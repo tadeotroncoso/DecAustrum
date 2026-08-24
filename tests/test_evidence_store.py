@@ -1,11 +1,40 @@
-import sqlite3
-from app.evidence_store import EvidenceStore
 import json
+import sqlite3
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.authorization_models import AuthorizationResponse
 from app.decision_models import ConditionEvidence
+from app.evidence_store import EvidenceStore
+
+def build_authorization() -> AuthorizationResponse:
+    return AuthorizationResponse(
+        decision_id=uuid4(),
+        evaluated_at=datetime(
+            2026,
+            8,
+            24,
+            10,
+            30,
+            tzinfo=timezone.utc,
+        ),
+        decision="DENY",
+        policy="unverified-account",
+        policy_version=1,
+        reason="Bank transfers from unverified accounts are denied.",
+        evidence=ConditionEvidence(
+            field="account_verified",
+            operator="equals",
+            actual_value=False,
+            expected_value=False,
+        ),
+        agent="finance-agent",
+        action="bank_transfer",
+        context={
+            "amount": 5000,
+            "account_verified": False,
+        },
+    )
 
 
 def test_initialize_creates_decisions_table(tmp_path):
@@ -42,36 +71,9 @@ def test_save_persists_authorization_decision(tmp_path):
     store = EvidenceStore(database_path)
     store.initialize()
 
-    decision_id = uuid4()
-    evaluated_at = datetime(
-        2026,
-        8,
-        24,
-        10,
-        30,
-        tzinfo=timezone.utc,
-    )
-
-    authorization = AuthorizationResponse(
-        decision_id=decision_id,
-        evaluated_at=evaluated_at,
-        decision="DENY",
-        policy="unverified-account",
-        policy_version=1,
-        reason="Bank transfers from unverified accounts are denied.",
-        evidence=ConditionEvidence(
-            field="account_verified",
-            operator="equals",
-            actual_value=False,
-            expected_value=False,
-        ),
-        agent="finance-agent",
-        action="bank_transfer",
-        context={
-            "amount": 5000,
-            "account_verified": False,
-        },
-    )
+    authorization = build_authorization()
+    decision_id = authorization.decision_id
+    evaluated_at = authorization.evaluated_at
 
     store.save(authorization)
 
@@ -106,3 +108,27 @@ def test_save_persists_authorization_decision(tmp_path):
         "amount": 5000,
         "account_verified": False,
     }
+
+def test_get_returns_saved_authorization(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    authorization = build_authorization()
+    store.save(authorization)
+
+    loaded_authorization = store.get(
+        authorization.decision_id
+    )
+
+    assert loaded_authorization == authorization
+
+
+def test_get_returns_none_for_unknown_decision(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    loaded_authorization = store.get(uuid4())
+
+    assert loaded_authorization is None
