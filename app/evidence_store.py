@@ -60,8 +60,9 @@ class EvidenceStore:
             connection.execute(CREATE_DECISIONS_TABLE)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
 
-    def save(
+    def _insert_authorization(
         self,
+        connection: sqlite3.Connection,
         authorization: AuthorizationResponse,
     ) -> None:
         evidence_json = None
@@ -77,35 +78,45 @@ class EvidenceStore:
             sort_keys=True,
         )
 
+        connection.execute(
+            """
+            INSERT INTO authorization_decisions (
+                decision_id,
+                evaluated_at,
+                decision,
+                policy_id,
+                policy_version,
+                reason,
+                evidence_json,
+                agent,
+                action,
+                context_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(authorization.decision_id),
+                authorization.evaluated_at.isoformat(),
+                authorization.decision,
+                authorization.policy,
+                authorization.policy_version,
+                authorization.reason,
+                evidence_json,
+                authorization.agent,
+                authorization.action,
+                context_json,
+            ),
+        )
+
+
+    def save(
+        self,
+        authorization: AuthorizationResponse,
+    ) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO authorization_decisions (
-                    decision_id,
-                    evaluated_at,
-                    decision,
-                    policy_id,
-                    policy_version,
-                    reason,
-                    evidence_json,
-                    agent,
-                    action,
-                    context_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(authorization.decision_id),
-                    authorization.evaluated_at.isoformat(),
-                    authorization.decision,
-                    authorization.policy,
-                    authorization.policy_version,
-                    authorization.reason,
-                    evidence_json,
-                    authorization.agent,
-                    authorization.action,
-                    context_json,
-                ),
+            self._insert_authorization(
+                connection,
+                authorization,
             )
 
     @staticmethod
@@ -202,33 +213,44 @@ class EvidenceStore:
         )
 
 
+    def _insert_approval(
+        self,
+        connection: sqlite3.Connection,
+        approval: ApprovalRecord,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO approval_requests (
+                decision_id,
+                status,
+                requested_at,
+                resolved_at,
+                resolved_by
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                str(approval.decision_id),
+                approval.status,
+                approval.requested_at.isoformat(),
+                (
+                    approval.resolved_at.isoformat()
+                    if approval.resolved_at is not None
+                    else None
+                ),
+                approval.resolved_by,
+            ),
+        )
+
+
     def save_approval(
         self,
         approval: ApprovalRecord,
     ) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO approval_requests (
-                    decision_id,
-                    status,
-                    requested_at,
-                    resolved_at,
-                    resolved_by
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    str(approval.decision_id),
-                    approval.status,
-                    approval.requested_at.isoformat(),
-                    (
-                        approval.resolved_at.isoformat()
-                        if approval.resolved_at is not None
-                        else None
-                    ),
-                    approval.resolved_by,
-                ),
+            self._insert_approval(
+                connection,
+                approval,
             )
 
 
@@ -252,3 +274,26 @@ class EvidenceStore:
             return None
 
         return self._row_to_approval(row)
+
+    def save_authorization_with_approval(
+        self,
+        authorization: AuthorizationResponse,
+        approval: ApprovalRecord | None,
+    ) -> None:
+        with self._connect() as connection:
+            self._insert_authorization(
+                connection,
+                authorization,
+            )
+
+            if approval is not None:
+                if approval.decision_id != authorization.decision_id:
+                    raise ValueError(
+                        "Approval decision_id must match "
+                        "authorization decision_id."
+                    )
+
+                self._insert_approval(
+                    connection,
+                    approval,
+                )

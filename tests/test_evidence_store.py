@@ -242,3 +242,27 @@ def test_approval_requires_existing_decision(tmp_path):
 
     with pytest.raises(sqlite3.IntegrityError):
         store.save_approval(approval)
+
+
+def test_combined_save_rolls_back_on_mismatched_approval(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    authorization = build_authorization()
+
+    approval = ApprovalRecord(
+        decision_id=uuid4(),
+        status="PENDING",
+        requested_at=authorization.evaluated_at,
+    )
+
+    with pytest.raises(ValueError):
+        store.save_authorization_with_approval(
+            authorization=authorization,
+            approval=approval,
+        )
+
+    assert store.get(authorization.decision_id) is None

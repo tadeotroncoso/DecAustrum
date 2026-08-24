@@ -77,7 +77,7 @@ def authorize(
         context=request.context,
     )
 
-    store.save(authorization)
+    approval = None
 
     if authorization.decision == "REQUIRE_APPROVAL":
         approval = ApprovalRecord(
@@ -86,7 +86,10 @@ def authorize(
             requested_at=authorization.evaluated_at,
         )
 
-        store.save_approval(approval)
+    store.save_authorization_with_approval(
+        authorization=authorization,
+        approval=approval,
+    )
 
     return authorization
 
