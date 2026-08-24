@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import pytest
+import sqlite3
 
 from app.authorization_models import AuthorizationResponse
 from app.evidence_store import EvidenceStore
@@ -342,3 +343,32 @@ def test_get_decision_rejects_invalid_uuid():
     )
 
     assert response.status_code == 422
+
+def test_invalid_authorization_is_not_persisted(
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": "a lot",
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+    with sqlite3.connect(
+        temporary_evidence_store.database_path
+    ) as connection:
+        stored_decisions = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM authorization_decisions
+            """
+        ).fetchone()[0]
+
+    assert stored_decisions == 0
