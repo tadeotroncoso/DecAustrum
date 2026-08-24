@@ -1,5 +1,8 @@
 import sqlite3
 from pathlib import Path
+import json
+
+from app.authorization_models import AuthorizationResponse
 
 
 CREATE_DECISIONS_TABLE = """
@@ -30,3 +33,51 @@ class EvidenceStore:
 
         with sqlite3.connect(self.database_path) as connection:
             connection.execute(CREATE_DECISIONS_TABLE)
+
+    def save(
+        self,
+        authorization: AuthorizationResponse,
+    ) -> None:
+        evidence_json = None
+
+        if authorization.evidence is not None:
+            evidence_json = json.dumps(
+                authorization.evidence.model_dump(mode="json"),
+                sort_keys=True,
+            )
+
+        context_json = json.dumps(
+            authorization.context,
+            sort_keys=True,
+        )
+
+        with sqlite3.connect(self.database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO authorization_decisions (
+                    decision_id,
+                    evaluated_at,
+                    decision,
+                    policy_id,
+                    policy_version,
+                    reason,
+                    evidence_json,
+                    agent,
+                    action,
+                    context_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(authorization.decision_id),
+                    authorization.evaluated_at.isoformat(),
+                    authorization.decision,
+                    authorization.policy,
+                    authorization.policy_version,
+                    authorization.reason,
+                    evidence_json,
+                    authorization.agent,
+                    authorization.action,
+                    context_json,
+                ),
+            )
