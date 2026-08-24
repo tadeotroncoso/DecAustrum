@@ -6,7 +6,7 @@ from app.evidence_store import EvidenceStore
 from app.main import app, get_evidence_store
 
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 
 
@@ -294,3 +294,51 @@ def test_authorize_persists_decision(
     )
 
     assert stored_authorization == returned_authorization
+
+def test_get_decision_returns_stored_authorization():
+    create_response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 5000,
+                "account_verified": False,
+            },
+        },
+    )
+
+    assert create_response.status_code == 200
+
+    created_data = create_response.json()
+    decision_id = created_data["decision_id"]
+
+    get_response = client.get(
+        f"/v1/decisions/{decision_id}"
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.json() == created_data
+
+
+def test_get_decision_returns_404_when_not_found():
+    decision_id = uuid4()
+
+    response = client.get(
+        f"/v1/decisions/{decision_id}"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "decision_not_found",
+        "message": (
+            f"Decision '{decision_id}' was not found."
+        ),
+    }
+
+def test_get_decision_rejects_invalid_uuid():
+    response = client.get(
+        "/v1/decisions/not-a-valid-uuid"
+    )
+
+    assert response.status_code == 422
