@@ -509,3 +509,71 @@ def test_non_approval_decisions_do_not_create_approval(
     )
 
     assert approval is None
+
+
+def test_get_pending_approval():
+    create_response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 25000,
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert create_response.status_code == 200
+
+    decision_id = create_response.json()["decision_id"]
+
+    response = client.get(
+        f"/v1/approvals/{decision_id}"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["decision_id"] == decision_id
+    assert data["status"] == "PENDING"
+    assert data["resolved_at"] is None
+    assert data["resolved_by"] is None
+
+
+
+def test_get_approval_returns_404_when_not_required():
+    create_response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "support-agent",
+            "action": "refund_payment",
+            "context": {
+                "amount": 300,
+            },
+        },
+    )
+
+    decision_id = create_response.json()["decision_id"]
+
+    response = client.get(
+        f"/v1/approvals/{decision_id}"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "approval_not_found",
+        "message": (
+            f"Approval for decision "
+            f"'{decision_id}' was not found."
+        ),
+    }
+
+
+def test_get_approval_rejects_invalid_uuid():
+    response = client.get(
+        "/v1/approvals/not-a-valid-uuid"
+    )
+
+    assert response.status_code == 422

@@ -136,3 +136,29 @@ def get_authorization_decision(
         )
 
     return authorization
+
+
+
+@app.get(
+    "/v1/approvals/{decision_id}",
+    response_model=ApprovalRecord,
+)
+def get_approval_request(
+    decision_id: UUID,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ApprovalRecord:
+    approval = store.get_approval(decision_id)
+
+    if approval is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "approval_not_found",
+                "message": (
+                    f"Approval for decision "
+                    f"'{decision_id}' was not found."
+                ),
+            },
+        )
+
+    return approval
