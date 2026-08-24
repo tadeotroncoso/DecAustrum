@@ -7,9 +7,12 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 
 from app.approval_models import (
     ApprovalRecord,
+    ApprovalRequestPage,
     ApprovalResolutionRequest,
     ApprovalResolutionStatus,
+    ApprovalStatus,
 )
+
 from app.authorization_models import (
     AuthorizationDecisionPage,
     AuthorizationRequest,
@@ -179,6 +182,27 @@ def get_authorization_decision(
 
     return authorization
 
+
+@app.get(
+    "/v1/approvals",
+    response_model=ApprovalRequestPage,
+)
+def list_approval_requests(
+    status: ApprovalStatus | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ApprovalRequestPage:
+    return ApprovalRequestPage(
+        items=store.list_approvals(
+            status=status,
+            limit=limit,
+            offset=offset,
+        ),
+        total=store.count_approvals(status=status),
+        limit=limit,
+        offset=offset,
+    )
 
 @app.get(
     "/v1/approvals/{decision_id}",

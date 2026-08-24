@@ -675,3 +675,49 @@ def test_resolution_rejects_blank_resolver():
     )
 
     assert response.status_code == 422
+
+
+def test_list_approvals_returns_all_requests():
+    create_pending_approval()
+    create_pending_approval()
+
+    response = client.get("/v1/approvals")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total"] == 2
+    assert len(data["items"]) == 2
+
+
+def test_list_approvals_filters_by_status():
+    approved_id = create_pending_approval()
+    pending_id = create_pending_approval()
+
+    approve_response = client.post(
+        f"/v1/approvals/{approved_id}/approve",
+        json={"resolved_by": "security-admin"},
+    )
+
+    assert approve_response.status_code == 200
+
+    response = client.get(
+        "/v1/approvals?status=PENDING"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total"] == 1
+    assert data["items"][0]["decision_id"] == pending_id
+    assert data["items"][0]["status"] == "PENDING"
+
+
+def test_list_approvals_rejects_unknown_status():
+    response = client.get(
+        "/v1/approvals?status=BANANA"
+    )
+
+    assert response.status_code == 422

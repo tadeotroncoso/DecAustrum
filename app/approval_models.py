@@ -23,6 +23,12 @@ class ApprovalRecord(BaseModel):
     resolved_at: datetime | None = None
     resolved_by: str | None = None
 
+class ApprovalRequestPage(BaseModel):
+    items: list[ApprovalRecord]
+    total: int
+    limit: int
+    offset: int
+
 ResolverIdentifier = Annotated[
     str,
     StringConstraints(

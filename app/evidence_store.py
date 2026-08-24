@@ -1,16 +1,15 @@
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
-
-from app.authorization_models import AuthorizationResponse
-
-from datetime import datetime
 
 from app.approval_models import (
     ApprovalRecord,
     ApprovalResolutionStatus,
+    ApprovalStatus,
 )
+from app.authorization_models import AuthorizationResponse
 from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
@@ -366,3 +365,64 @@ class EvidenceStore:
             ).fetchone()
 
         return self._row_to_approval(row)
+
+    def list_approvals(
+        self,
+        status: ApprovalStatus | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[ApprovalRecord]:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            if status is None:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM approval_requests
+                    ORDER BY requested_at DESC, decision_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (limit, offset),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM approval_requests
+                    WHERE status = ?
+                    ORDER BY requested_at DESC, decision_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (status, limit, offset),
+                ).fetchall()
+
+        return [
+            self._row_to_approval(row)
+            for row in rows
+        ]
+
+
+    def count_approvals(
+        self,
+        status: ApprovalStatus | None = None,
+    ) -> int:
+        with self._connect() as connection:
+            if status is None:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM approval_requests
+                    """
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM approval_requests
+                    WHERE status = ?
+                    """,
+                    (status,),
+                ).fetchone()
+
+        return int(row[0])
