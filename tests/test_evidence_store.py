@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.authorization_models import AuthorizationResponse
@@ -132,3 +132,38 @@ def test_get_returns_none_for_unknown_decision(tmp_path):
     loaded_authorization = store.get(uuid4())
 
     assert loaded_authorization is None
+    
+def test_list_decisions_is_paginated_and_newest_first(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    first = build_authorization()
+
+    second = first.model_copy(
+        update={
+            "decision_id": uuid4(),
+            "evaluated_at": (
+                first.evaluated_at
+                + timedelta(seconds=1)
+            ),
+        }
+    )
+
+    store.save(first)
+    store.save(second)
+
+    first_page = store.list_decisions(
+        limit=1,
+        offset=0,
+    )
+    second_page = store.list_decisions(
+        limit=1,
+        offset=1,
+    )
+
+    assert first_page == [second]
+    assert second_page == [first]
+    assert store.count() == 2

@@ -1,7 +1,8 @@
+import json
 import sqlite3
 from pathlib import Path
-import json
 from uuid import UUID
+
 from app.authorization_models import AuthorizationResponse
 
 
@@ -22,7 +23,10 @@ CREATE TABLE IF NOT EXISTS authorization_decisions (
 
 
 class EvidenceStore:
-    def __init__(self, database_path: Path) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+    ) -> None:
         self.database_path = database_path
 
     def initialize(self) -> None:
@@ -81,26 +85,11 @@ class EvidenceStore:
                     context_json,
                 ),
             )
-            
-    def get(
-        self,
-        decision_id: UUID,
-    ) -> AuthorizationResponse | None:
-        with sqlite3.connect(self.database_path) as connection:
-            connection.row_factory = sqlite3.Row
 
-            row = connection.execute(
-                """
-                SELECT *
-                FROM authorization_decisions
-                WHERE decision_id = ?
-                """,
-                (str(decision_id),),
-            ).fetchone()
-
-        if row is None:
-            return None
-
+    @staticmethod
+    def _row_to_authorization(
+        row: sqlite3.Row,
+    ) -> AuthorizationResponse:
         evidence = None
 
         if row["evidence_json"] is not None:
@@ -120,3 +109,58 @@ class EvidenceStore:
                 "context": json.loads(row["context_json"]),
             }
         )
+
+    def get(
+        self,
+        decision_id: UUID,
+    ) -> AuthorizationResponse | None:
+        with sqlite3.connect(self.database_path) as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT *
+                FROM authorization_decisions
+                WHERE decision_id = ?
+                """,
+                (str(decision_id),),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_authorization(row)
+
+    def list_decisions(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[AuthorizationResponse]:
+        with sqlite3.connect(self.database_path) as connection:
+            connection.row_factory = sqlite3.Row
+
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM authorization_decisions
+                ORDER BY evaluated_at DESC, decision_id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+
+        return [
+            self._row_to_authorization(row)
+            for row in rows
+        ]
+
+    def count(self) -> int:
+        with sqlite3.connect(self.database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM authorization_decisions
+                """
+            ).fetchone()
+
+        return int(row[0])
