@@ -1,12 +1,27 @@
 from fastapi.testclient import TestClient
+import pytest
+
+from app.authorization_models import AuthorizationResponse
+from app.evidence_store import EvidenceStore
+from app.main import app, get_evidence_store
 
 from datetime import datetime
 from uuid import UUID
 
-from app.main import app
 
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def temporary_evidence_store(tmp_path):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    app.dependency_overrides[get_evidence_store] = lambda: store
+
+    yield store
+
+    app.dependency_overrides.clear()
 
 
 def test_authorize_returns_deny_with_winning_policy():
@@ -250,3 +265,32 @@ def test_authorize_returns_unique_decision_metadata():
     )
 
     assert evaluated_at.tzinfo is not None
+
+def test_authorize_persists_decision(
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 5000,
+                "account_verified": False,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+
+    returned_authorization = (
+        AuthorizationResponse.model_validate(
+            response.json()
+        )
+    )
+
+    stored_authorization = temporary_evidence_store.get(
+        returned_authorization.decision_id
+    )
+
+    assert stored_authorization == returned_authorization
