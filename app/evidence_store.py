@@ -22,6 +22,21 @@ CREATE TABLE IF NOT EXISTS authorization_decisions (
 """
 
 
+CREATE_APPROVAL_REQUESTS_TABLE = """
+CREATE TABLE IF NOT EXISTS approval_requests (
+    decision_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL CHECK (
+        status IN ('PENDING', 'APPROVED', 'REJECTED')
+    ),
+    requested_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by TEXT,
+    FOREIGN KEY (decision_id)
+        REFERENCES authorization_decisions(decision_id)
+)
+"""
+
+
 class EvidenceStore:
     def __init__(
         self,
@@ -29,14 +44,20 @@ class EvidenceStore:
     ) -> None:
         self.database_path = database_path
 
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.database_path)
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
     def initialize(self) -> None:
         self.database_path.parent.mkdir(
             parents=True,
             exist_ok=True,
         )
 
-        with sqlite3.connect(self.database_path) as connection:
+        with self._connect() as connection:
             connection.execute(CREATE_DECISIONS_TABLE)
+            connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
 
     def save(
         self,
@@ -55,7 +76,7 @@ class EvidenceStore:
             sort_keys=True,
         )
 
-        with sqlite3.connect(self.database_path) as connection:
+        with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO authorization_decisions (
@@ -114,7 +135,7 @@ class EvidenceStore:
         self,
         decision_id: UUID,
     ) -> AuthorizationResponse | None:
-        with sqlite3.connect(self.database_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
 
             row = connection.execute(
@@ -136,7 +157,7 @@ class EvidenceStore:
         limit: int = 20,
         offset: int = 0,
     ) -> list[AuthorizationResponse]:
-        with sqlite3.connect(self.database_path) as connection:
+        with self._connect() as connection:
             connection.row_factory = sqlite3.Row
 
             rows = connection.execute(
@@ -155,7 +176,7 @@ class EvidenceStore:
         ]
 
     def count(self) -> int:
-        with sqlite3.connect(self.database_path) as connection:
+        with self._connect() as connection:
             row = connection.execute(
                 """
                 SELECT COUNT(*)
