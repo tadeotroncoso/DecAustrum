@@ -427,3 +427,85 @@ def test_list_decisions_rejects_invalid_pagination(query):
     )
 
     assert response.status_code == 422
+
+def test_require_approval_creates_pending_approval(
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 25000,
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+
+    authorization = AuthorizationResponse.model_validate(
+        response.json()
+    )
+
+    approval = temporary_evidence_store.get_approval(
+        authorization.decision_id
+    )
+
+    assert approval is not None
+    assert approval.decision_id == authorization.decision_id
+    assert approval.status == "PENDING"
+    assert approval.requested_at == authorization.evaluated_at
+    assert approval.resolved_at is None
+    assert approval.resolved_by is None
+
+@pytest.mark.parametrize(
+    ("payload", "expected_decision"),
+    [
+        (
+            {
+                "agent": "support-agent",
+                "action": "refund_payment",
+                "context": {
+                    "amount": 300,
+                },
+            },
+            "ALLOW",
+        ),
+        (
+            {
+                "agent": "finance-agent",
+                "action": "bank_transfer",
+                "context": {
+                    "amount": 5000,
+                    "account_verified": False,
+                },
+            },
+            "DENY",
+        ),
+    ],
+)
+def test_non_approval_decisions_do_not_create_approval(
+    payload,
+    expected_decision,
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+
+    authorization = AuthorizationResponse.model_validate(
+        response.json()
+    )
+
+    assert authorization.decision == expected_decision
+
+    approval = temporary_evidence_store.get_approval(
+        authorization.decision_id
+    )
+
+    assert approval is None

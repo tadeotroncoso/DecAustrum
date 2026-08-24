@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
-
 from fastapi import Depends, FastAPI, HTTPException, Query
 from app.evidence_store import EvidenceStore
 from app.exceptions import InvalidPolicyContextError
@@ -12,6 +11,7 @@ from app.authorization_models import (
     AuthorizationRequest,
     AuthorizationResponse,
 )
+from app.approval_models import ApprovalRecord
 
 
 DATABASE_PATH = Path("data/regtrace.db")
@@ -78,6 +78,15 @@ def authorize(
     )
 
     store.save(authorization)
+
+    if authorization.decision == "REQUIRE_APPROVAL":
+        approval = ApprovalRecord(
+            decision_id=authorization.decision_id,
+            status="PENDING",
+            requested_at=authorization.evaluated_at,
+        )
+
+        store.save_approval(approval)
 
     return authorization
 
