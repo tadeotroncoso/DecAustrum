@@ -2,16 +2,26 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
+
 from fastapi import Depends, FastAPI, HTTPException, Query
-from app.evidence_store import EvidenceStore
-from app.exceptions import InvalidPolicyContextError
-from app.policy_engine import evaluate_policy
+
+from app.approval_models import (
+    ApprovalRecord,
+    ApprovalResolutionRequest,
+    ApprovalResolutionStatus,
+)
 from app.authorization_models import (
     AuthorizationDecisionPage,
     AuthorizationRequest,
     AuthorizationResponse,
 )
-from app.approval_models import ApprovalRecord
+from app.evidence_store import EvidenceStore
+from app.exceptions import (
+    ApprovalAlreadyResolvedError,
+    ApprovalNotFoundError,
+    InvalidPolicyContextError,
+)
+from app.policy_engine import evaluate_policy
 
 
 DATABASE_PATH = Path("data/regtrace.db")
@@ -33,6 +43,38 @@ app = FastAPI(
 
 def get_evidence_store() -> EvidenceStore:
     return evidence_store
+
+
+def _resolve_approval_request(
+    decision_id: UUID,
+    resolution: ApprovalResolutionRequest,
+    status: ApprovalResolutionStatus,
+    store: EvidenceStore,
+) -> ApprovalRecord:
+    try:
+        return store.resolve_approval(
+            decision_id=decision_id,
+            status=status,
+            resolved_by=resolution.resolved_by,
+            resolved_at=datetime.now(timezone.utc),
+        )
+    except ApprovalNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "approval_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except ApprovalAlreadyResolvedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approval_already_resolved",
+                "message": str(exc),
+                "current_status": exc.current_status,
+            },
+        ) from exc
 
 
 @app.get("/health")
@@ -138,7 +180,6 @@ def get_authorization_decision(
     return authorization
 
 
-
 @app.get(
     "/v1/approvals/{decision_id}",
     response_model=ApprovalRecord,
@@ -162,3 +203,37 @@ def get_approval_request(
         )
 
     return approval
+
+
+@app.post(
+    "/v1/approvals/{decision_id}/approve",
+    response_model=ApprovalRecord,
+)
+def approve_request(
+    decision_id: UUID,
+    resolution: ApprovalResolutionRequest,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ApprovalRecord:
+    return _resolve_approval_request(
+        decision_id=decision_id,
+        resolution=resolution,
+        status="APPROVED",
+        store=store,
+    )
+
+
+@app.post(
+    "/v1/approvals/{decision_id}/reject",
+    response_model=ApprovalRecord,
+)
+def reject_request(
+    decision_id: UUID,
+    resolution: ApprovalResolutionRequest,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ApprovalRecord:
+    return _resolve_approval_request(
+        decision_id=decision_id,
+        resolution=resolution,
+        status="REJECTED",
+        store=store,
+    )

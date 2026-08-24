@@ -577,3 +577,101 @@ def test_get_approval_rejects_invalid_uuid():
     )
 
     assert response.status_code == 422
+
+def create_pending_approval() -> str:
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 25000,
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "REQUIRE_APPROVAL"
+
+    return response.json()["decision_id"]
+
+def test_approve_pending_request():
+    decision_id = create_pending_approval()
+
+    response = client.post(
+        f"/v1/approvals/{decision_id}/approve",
+        json={
+            "resolved_by": "security-admin",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "APPROVED"
+    assert data["resolved_by"] == "security-admin"
+    assert data["resolved_at"] is not None
+
+
+def test_reject_pending_request():
+    decision_id = create_pending_approval()
+
+    response = client.post(
+        f"/v1/approvals/{decision_id}/reject",
+        json={
+            "resolved_by": "risk-admin",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "REJECTED"
+    assert response.json()["resolved_by"] == "risk-admin"
+
+
+def test_cannot_resolve_request_twice():
+    decision_id = create_pending_approval()
+
+    first_response = client.post(
+        f"/v1/approvals/{decision_id}/approve",
+        json={"resolved_by": "first-admin"},
+    )
+
+    second_response = client.post(
+        f"/v1/approvals/{decision_id}/reject",
+        json={"resolved_by": "second-admin"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+
+    detail = second_response.json()["detail"]
+
+    assert detail["code"] == "approval_already_resolved"
+    assert detail["current_status"] == "APPROVED"
+
+
+def test_resolve_unknown_approval_returns_404():
+    decision_id = uuid4()
+
+    response = client.post(
+        f"/v1/approvals/{decision_id}/approve",
+        json={"resolved_by": "security-admin"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == (
+        "approval_not_found"
+    )
+
+
+def test_resolution_rejects_blank_resolver():
+    decision_id = create_pending_approval()
+
+    response = client.post(
+        f"/v1/approvals/{decision_id}/approve",
+        json={"resolved_by": "   "},
+    )
+
+    assert response.status_code == 422
