@@ -26,10 +26,19 @@ from app.exceptions import (
 )
 from app.policy_engine import evaluate_policy
 
+from app.security import (
+    get_configured_api_key,
+    require_api_key,
+)
 
 DATABASE_PATH = Path("data/regtrace.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    get_configured_api_key()
+    evidence_store.initialize()
+    yield
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -88,6 +97,7 @@ def health_check():
 @app.post(
     "/v1/authorize",
     response_model=AuthorizationResponse,
+    dependencies=[Depends(require_api_key)],
 )
 def authorize(
     request: AuthorizationRequest,
@@ -143,6 +153,7 @@ def authorize(
 @app.get(
     "/v1/decisions",
     response_model=AuthorizationDecisionPage,
+    dependencies=[Depends(require_api_key)],
 )
 def list_authorization_decisions(
     limit: int = Query(default=20, ge=1, le=100),
@@ -163,6 +174,7 @@ def list_authorization_decisions(
 @app.get(
     "/v1/decisions/{decision_id}",
     response_model=AuthorizationResponse,
+    dependencies=[Depends(require_api_key)],
 )
 def get_authorization_decision(
     decision_id: UUID,
@@ -187,6 +199,7 @@ def get_authorization_decision(
 @app.get(
     "/v1/approvals",
     response_model=ApprovalRequestPage,
+    dependencies=[Depends(require_api_key)],
 )
 def list_approval_requests(
     status: ApprovalStatus | None = Query(default=None),
@@ -208,6 +221,7 @@ def list_approval_requests(
 @app.get(
     "/v1/approvals/{decision_id}",
     response_model=ApprovalRecord,
+    dependencies=[Depends(require_api_key)],
 )
 def get_approval_request(
     decision_id: UUID,
@@ -233,6 +247,7 @@ def get_approval_request(
 @app.post(
     "/v1/approvals/{decision_id}/approve",
     response_model=ApprovalRecord,
+    dependencies=[Depends(require_api_key)],
 )
 def approve_request(
     decision_id: UUID,
@@ -250,6 +265,7 @@ def approve_request(
 @app.post(
     "/v1/approvals/{decision_id}/reject",
     response_model=ApprovalRecord,
+    dependencies=[Depends(require_api_key)],
 )
 def reject_request(
     decision_id: UUID,

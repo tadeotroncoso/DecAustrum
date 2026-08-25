@@ -9,12 +9,21 @@ from app.main import app, get_evidence_store
 from datetime import datetime
 from uuid import UUID, uuid4
 
+TEST_API_KEY = "test-api-key"
 
+client = TestClient(
+    app,
+    headers={"X-API-Key": TEST_API_KEY},
+)
 
-client = TestClient(app)
+unauthenticated_client = TestClient(app)
 
 @pytest.fixture(autouse=True)
-def temporary_evidence_store(tmp_path):
+def temporary_evidence_store(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "REGTRACE_API_KEY",
+        TEST_API_KEY,
+    )
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
 
@@ -756,3 +765,80 @@ def test_authorization_response_contains_policy_trace():
 
     assert trace_by_policy["large-transfer"]["matched"] is True
     assert trace_by_policy["unverified-account"]["matched"] is True
+
+
+def test_authorize_rejects_missing_api_key():
+    response = unauthenticated_client.post(
+        "/v1/authorize",
+        json={
+            "agent": "test-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == {
+        "code": "invalid_api_key",
+        "message": "A valid API key is required.",
+    }
+
+
+def test_authorize_rejects_invalid_api_key():
+    response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": "wrong-key"},
+        json={
+            "agent": "test-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_health_does_not_require_api_key():
+    response = unauthenticated_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_openapi_defines_api_key_security_scheme():
+    schema = app.openapi()
+
+    security_scheme = schema["components"]["securitySchemes"][
+        "RegTraceApiKey"
+    ]
+
+    assert security_scheme["type"] == "apiKey"
+    assert security_scheme["in"] == "header"
+    assert security_scheme["name"] == "X-API-Key"
+
+
+def test_all_v1_endpoints_require_api_key_in_openapi():
+    schema = app.openapi()
+
+    http_methods = {
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+    }
+
+    for path, path_item in schema["paths"].items():
+        if not path.startswith("/v1/"):
+            continue
+
+        for method in http_methods:
+            operation = path_item.get(method)
+
+            if operation is None:
+                continue
+
+            assert {"RegTraceApiKey": []} in operation.get(
+                "security",
+                [],
+            ), f"{method.upper()} {path} is not protected"
