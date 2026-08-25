@@ -2,7 +2,10 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from app.decision_models import PolicyEvidence
+from app.decision_models import (
+    PolicyEvidence,
+    PolicyTraceEntry,
+)
 from app.policy_types import Decision
 
 from pydantic import BaseModel, StringConstraints
@@ -35,6 +38,7 @@ class AuthorizationResponse(BaseModel):
     agent: str
     action: str
     context: dict[str, Any]
+    trace: list[PolicyTraceEntry]
 
 class AuthorizationDecisionPage(BaseModel):
     items: list[AuthorizationResponse]

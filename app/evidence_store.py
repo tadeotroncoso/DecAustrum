@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS authorization_decisions (
     policy_version INTEGER,
     reason TEXT NOT NULL,
     evidence_json TEXT,
+    trace_json TEXT NOT NULL DEFAULT '[]',
     agent TEXT NOT NULL,
     action TEXT NOT NULL,
     context_json TEXT NOT NULL
@@ -59,6 +60,28 @@ class EvidenceStore:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @staticmethod
+    def _migrate_decisions_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        columns = connection.execute(
+            "PRAGMA table_info(authorization_decisions)"
+        ).fetchall()
+
+        column_names = {
+            column[1]
+            for column in columns
+        }
+
+        if "trace_json" not in column_names:
+            connection.execute(
+                """
+                ALTER TABLE authorization_decisions
+                ADD COLUMN trace_json
+                TEXT NOT NULL DEFAULT '[]'
+                """
+            )
+
     def initialize(self) -> None:
         self.database_path.parent.mkdir(
             parents=True,
@@ -67,6 +90,7 @@ class EvidenceStore:
 
         with self._connect() as connection:
             connection.execute(CREATE_DECISIONS_TABLE)
+            self._migrate_decisions_table(connection)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
 
     def _insert_authorization(
@@ -87,6 +111,14 @@ class EvidenceStore:
             sort_keys=True,
         )
 
+        trace_json = json.dumps(
+            [
+                entry.model_dump(mode="json")
+                for entry in authorization.trace
+            ],
+            sort_keys=True,
+        )
+
         connection.execute(
             """
             INSERT INTO authorization_decisions (
@@ -97,11 +129,12 @@ class EvidenceStore:
                 policy_version,
                 reason,
                 evidence_json,
+                trace_json,
                 agent,
                 action,
                 context_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(authorization.decision_id),
@@ -111,6 +144,7 @@ class EvidenceStore:
                 authorization.policy_version,
                 authorization.reason,
                 evidence_json,
+                trace_json,
                 authorization.agent,
                 authorization.action,
                 context_json,
@@ -137,6 +171,17 @@ class EvidenceStore:
         if row["evidence_json"] is not None:
             evidence = json.loads(row["evidence_json"])
 
+        if evidence is not None and "conditions" not in evidence:
+            evidence = {
+                "match": "all",
+                "conditions": [
+                    {
+                        **evidence,
+                        "matched": True,
+                    }
+                ],
+            }
+
         return AuthorizationResponse.model_validate(
             {
                 "decision_id": row["decision_id"],
@@ -146,6 +191,7 @@ class EvidenceStore:
                 "policy_version": row["policy_version"],
                 "reason": row["reason"],
                 "evidence": evidence,
+                "trace": json.loads(row["trace_json"]),
                 "agent": row["agent"],
                 "action": row["action"],
                 "context": json.loads(row["context_json"]),

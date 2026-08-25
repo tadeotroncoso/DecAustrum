@@ -733,3 +733,26 @@ def test_list_approvals_rejects_unknown_status():
     )
 
     assert response.status_code == 422
+
+def test_authorization_response_contains_policy_trace():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 25000,
+                "account_verified": False,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+
+    trace_by_policy = {
+        entry["policy_id"]: entry
+        for entry in response.json()["trace"]
+    }
+
+    assert trace_by_policy["large-transfer"]["matched"] is True
+    assert trace_by_policy["unverified-account"]["matched"] is True

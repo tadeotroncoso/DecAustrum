@@ -120,6 +120,7 @@ def authorize(
         agent=request.agent,
         action=request.action,
         context=request.context,
+        trace=evaluation.trace,
     )
 
     approval = None

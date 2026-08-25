@@ -1,23 +1,41 @@
 import json
 import sqlite3
-import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
-from app.approval_models import ApprovalRecord
 
+import pytest
+
+from app.approval_models import ApprovalRecord
 from app.authorization_models import AuthorizationResponse
 from app.decision_models import (
     ConditionEvidence,
     PolicyEvidence,
+    PolicyTraceEntry,
 )
 from app.evidence_store import EvidenceStore
-
 from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
 )
 
 def build_authorization() -> AuthorizationResponse:
+    reason = (
+        "Bank transfers from unverified accounts are denied."
+    )
+
+    evidence = PolicyEvidence(
+        match="all",
+        conditions=[
+            ConditionEvidence(
+                field="account_verified",
+                operator="equals",
+                actual_value=False,
+                expected_value=False,
+                matched=True,
+            )
+        ],
+    )
+
     return AuthorizationResponse(
         decision_id=uuid4(),
         evaluated_at=datetime(
@@ -31,19 +49,18 @@ def build_authorization() -> AuthorizationResponse:
         decision="DENY",
         policy="unverified-account",
         policy_version=1,
-        reason="Bank transfers from unverified accounts are denied.",
-        evidence=PolicyEvidence(
-            match="all",
-            conditions=[
-                ConditionEvidence(
-                    field="account_verified",
-                    operator="equals",
-                    actual_value=False,
-                    expected_value=False,
-                    matched=True,
-                )
-            ],
-        ),
+        reason=reason,
+        evidence=evidence,
+        trace=[
+            PolicyTraceEntry(
+                policy_id="unverified-account",
+                policy_version=1,
+                decision="DENY",
+                reason=reason,
+                matched=True,
+                evidence=evidence,
+            )
+        ],
         agent="finance-agent",
         action="bank_transfer",
         context={
@@ -77,6 +94,7 @@ def test_initialize_creates_decisions_table(tmp_path):
         "policy_version",
         "reason",
         "evidence_json",
+        "trace_json",
         "agent",
         "action",
         "context_json",
@@ -125,6 +143,12 @@ def test_save_persists_authorization_decision(tmp_path):
             }
         ],
     }
+    stored_trace = json.loads(row["trace_json"])
+
+    assert len(stored_trace) == 1
+    assert stored_trace[0]["policy_id"] == "unverified-account"
+    assert stored_trace[0]["decision"] == "DENY"
+    assert stored_trace[0]["matched"] is True
 
     assert json.loads(row["context_json"]) == {
         "amount": 5000,
@@ -363,3 +387,39 @@ def test_resolve_unknown_approval_fails(tmp_path):
             resolved_by="security-admin",
             resolved_at=datetime.now(timezone.utc),
         )
+
+def test_initialize_migrates_legacy_decisions_table(
+    tmp_path,
+):
+    database_path = tmp_path / "legacy.db"
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE authorization_decisions (
+                decision_id TEXT PRIMARY KEY,
+                evaluated_at TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                policy_id TEXT,
+                policy_version INTEGER,
+                reason TEXT NOT NULL,
+                evidence_json TEXT,
+                agent TEXT NOT NULL,
+                action TEXT NOT NULL,
+                context_json TEXT NOT NULL
+            )
+            """
+        )
+
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        columns = connection.execute(
+            "PRAGMA table_info(authorization_decisions)"
+        ).fetchall()
+
+    assert "trace_json" in {
+        column[1]
+        for column in columns
+    }
