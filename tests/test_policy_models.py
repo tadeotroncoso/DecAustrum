@@ -20,3 +20,33 @@ def test_policy_version_must_be_positive():
                 "reason": "Test reason.",
             }
         )
+
+
+def test_policy_accepts_multiple_conditions():
+    policy = Policy.model_validate(
+        {
+            "id": "high-risk-data-export",
+            "version": 1,
+            "action": "export_customer_data",
+            "match": "all",
+            "conditions": [
+                {
+                    "field": "record_count",
+                    "operator": "greater_than",
+                    "value": 1000,
+                },
+                {
+                    "field": "destination_region",
+                    "operator": "not_equals",
+                    "value": "EU",
+                },
+            ],
+            "decision": "DENY",
+            "reason": (
+                "Large data exports outside the EU are denied."
+            ),
+        }
+    )
+
+    assert policy.match == "all"
+    assert len(policy.conditions) == 2
