@@ -842,3 +842,139 @@ def test_all_v1_endpoints_require_api_key_in_openapi():
                 "security",
                 [],
             ), f"{method.upper()} {path} is not protected"
+
+def test_authorize_replays_same_idempotent_request():
+    payload = {
+        "agent": "finance-agent",
+        "action": "refund_payment",
+        "context": {
+            "amount": 750,
+        },
+    }
+
+    headers = {
+        "Idempotency-Key": "refund-request-123",
+    }
+
+    first_response = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json=payload,
+    )
+
+    second_response = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json=payload,
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json() == first_response.json()
+
+    decisions_response = client.get("/v1/decisions")
+    approvals_response = client.get("/v1/approvals")
+
+    assert decisions_response.json()["total"] == 1
+    assert approvals_response.json()["total"] == 1
+
+
+def test_authorize_rejects_reused_key_for_different_request():
+    headers = {
+        "Idempotency-Key": "conflicting-request",
+    }
+
+    first_response = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json={
+            "agent": "finance-agent",
+            "action": "refund_payment",
+            "context": {
+                "amount": 750,
+            },
+        },
+    )
+
+    second_response = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json={
+            "agent": "finance-agent",
+            "action": "refund_payment",
+            "context": {
+                "amount": 751,
+            },
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert second_response.json()["detail"] == {
+        "code": "idempotency_key_conflict",
+        "message": (
+            "Idempotency key has already been used "
+            "with a different request."
+        ),
+    }
+
+def test_authorize_recovers_from_idempotency_race(
+    temporary_evidence_store,
+    monkeypatch,
+):
+    store = temporary_evidence_store
+
+    payload = {
+        "agent": "finance-agent",
+        "action": "refund_payment",
+        "context": {
+            "amount": 750,
+        },
+    }
+
+    headers = {
+        "Idempotency-Key": "concurrent-request",
+    }
+
+    original_response = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json=payload,
+    )
+
+    original_get = store.get_idempotency_record
+    lookup_count = 0
+
+    def miss_first_lookup(idempotency_key: str):
+        nonlocal lookup_count
+        lookup_count += 1
+
+        if lookup_count == 1:
+            return None
+
+        return original_get(idempotency_key)
+
+    monkeypatch.setattr(
+        store,
+        "get_idempotency_record",
+        miss_first_lookup,
+    )
+
+    replayed_response = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json=payload,
+    )
+
+    assert original_response.status_code == 200
+    assert replayed_response.status_code == 200
+    assert replayed_response.json() == (
+        original_response.json()
+    )
+    assert lookup_count == 2
+
+    decisions_response = client.get("/v1/decisions")
+    approvals_response = client.get("/v1/approvals")
+
+    assert decisions_response.json()["total"] == 1
+    assert approvals_response.json()["total"] == 1

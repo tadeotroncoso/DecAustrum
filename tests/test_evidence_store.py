@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from app.idempotency import IdempotencyRecord
 
 from app.approval_models import ApprovalRecord
 from app.authorization_models import AuthorizationResponse
@@ -423,3 +424,166 @@ def test_initialize_migrates_legacy_decisions_table(
         column[1]
         for column in columns
     }
+
+def test_initialize_creates_idempotency_records_table(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        columns = connection.execute(
+            "PRAGMA table_info(idempotency_records)"
+        ).fetchall()
+
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(idempotency_records)"
+        ).fetchall()
+
+    column_names = {
+        column[1]
+        for column in columns
+    }
+
+    assert column_names == {
+        "idempotency_key",
+        "request_fingerprint",
+        "decision_id",
+        "created_at",
+    }
+
+    assert len(foreign_keys) == 1
+    assert foreign_keys[0][2] == "authorization_decisions"
+    assert foreign_keys[0][3] == "decision_id"
+    assert foreign_keys[0][4] == "decision_id"
+
+
+def test_atomic_save_persists_idempotency_record(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    authorization = build_authorization()
+
+    idempotency_record = IdempotencyRecord(
+        idempotency_key="authorization-request-123",
+        request_fingerprint="fingerprint-123",
+        decision_id=authorization.decision_id,
+        created_at=authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=authorization,
+        approval=None,
+        idempotency_record=idempotency_record,
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+
+        row = connection.execute(
+            """
+            SELECT *
+            FROM idempotency_records
+            WHERE idempotency_key = ?
+            """,
+            ("authorization-request-123",),
+        ).fetchone()
+
+    assert row is not None
+    assert row["request_fingerprint"] == "fingerprint-123"
+    assert row["decision_id"] == str(
+        authorization.decision_id
+    )
+    assert row["created_at"] == (
+        authorization.evaluated_at.isoformat()
+    )
+
+
+def test_duplicate_idempotency_key_rolls_back_authorization(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    first_authorization = build_authorization()
+    second_authorization = build_authorization()
+
+    first_record = IdempotencyRecord(
+        idempotency_key="duplicate-key",
+        request_fingerprint="first-fingerprint",
+        decision_id=first_authorization.decision_id,
+        created_at=first_authorization.evaluated_at,
+    )
+
+    second_record = IdempotencyRecord(
+        idempotency_key="duplicate-key",
+        request_fingerprint="second-fingerprint",
+        decision_id=second_authorization.decision_id,
+        created_at=second_authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=first_authorization,
+        approval=None,
+        idempotency_record=first_record,
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.save_authorization_with_approval(
+            authorization=second_authorization,
+            approval=None,
+            idempotency_record=second_record,
+        )
+
+    assert store.get(
+        second_authorization.decision_id
+    ) is None
+
+
+def test_get_idempotency_record_returns_saved_record(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    authorization = build_authorization()
+
+    expected_record = IdempotencyRecord(
+        idempotency_key="saved-key",
+        request_fingerprint="saved-fingerprint",
+        decision_id=authorization.decision_id,
+        created_at=authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=authorization,
+        approval=None,
+        idempotency_record=expected_record,
+    )
+
+    loaded_record = store.get_idempotency_record(
+        "saved-key"
+    )
+
+    assert loaded_record == expected_record
+
+
+def test_get_idempotency_record_returns_none_for_unknown_key(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    loaded_record = store.get_idempotency_record(
+        "unknown-key"
+    )
+
+    assert loaded_record is None

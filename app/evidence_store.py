@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
+from app.idempotency import IdempotencyRecord
 
 from app.approval_models import (
     ApprovalRecord,
@@ -42,6 +43,17 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     requested_at TEXT NOT NULL,
     resolved_at TEXT,
     resolved_by TEXT,
+    FOREIGN KEY (decision_id)
+        REFERENCES authorization_decisions(decision_id)
+)
+"""
+
+CREATE_IDEMPOTENCY_RECORDS_TABLE = """
+CREATE TABLE IF NOT EXISTS idempotency_records (
+    idempotency_key TEXT PRIMARY KEY,
+    request_fingerprint TEXT NOT NULL,
+    decision_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
     FOREIGN KEY (decision_id)
         REFERENCES authorization_decisions(decision_id)
 )
@@ -92,6 +104,8 @@ class EvidenceStore:
             connection.execute(CREATE_DECISIONS_TABLE)
             self._migrate_decisions_table(connection)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
+            connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
+            connection.execute(CREATE_IDEMPOTENCY_RECORDS_TABLE)
 
     def _insert_authorization(
         self,
@@ -219,6 +233,41 @@ class EvidenceStore:
 
         return self._row_to_authorization(row)
 
+    def get_idempotency_record(
+        self,
+        idempotency_key: str,
+    ) -> IdempotencyRecord | None:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT
+                    idempotency_key,
+                    request_fingerprint,
+                    decision_id,
+                    created_at
+                FROM idempotency_records
+                WHERE idempotency_key = ?
+                """,
+                (idempotency_key,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return IdempotencyRecord.model_validate(
+            {
+                "idempotency_key": row["idempotency_key"],
+                "request_fingerprint": (
+                    row["request_fingerprint"]
+                ),
+                "decision_id": row["decision_id"],
+                "created_at": row["created_at"],
+            }
+        )
+    
+
     def list_decisions(
         self,
         limit: int = 20,
@@ -334,6 +383,7 @@ class EvidenceStore:
         self,
         authorization: AuthorizationResponse,
         approval: ApprovalRecord | None,
+        idempotency_record: IdempotencyRecord | None = None,
     ) -> None:
         with self._connect() as connection:
             self._insert_authorization(
@@ -342,7 +392,10 @@ class EvidenceStore:
             )
 
             if approval is not None:
-                if approval.decision_id != authorization.decision_id:
+                if (
+                    approval.decision_id
+                    != authorization.decision_id
+                ):
                     raise ValueError(
                         "Approval decision_id must match "
                         "authorization decision_id."
@@ -351,6 +404,21 @@ class EvidenceStore:
                 self._insert_approval(
                     connection,
                     approval,
+                )
+
+            if idempotency_record is not None:
+                if (
+                    idempotency_record.decision_id
+                    != authorization.decision_id
+                ):
+                    raise ValueError(
+                        "Idempotency record decision_id must match "
+                        "authorization decision_id."
+                    )
+
+                self._insert_idempotency_record(
+                    connection,
+                    idempotency_record,
                 )
 
     def resolve_approval(
@@ -472,3 +540,26 @@ class EvidenceStore:
                 ).fetchone()
 
         return int(row[0])
+
+    @staticmethod
+    def _insert_idempotency_record(
+        connection: sqlite3.Connection,
+        record: IdempotencyRecord,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO idempotency_records (
+                idempotency_key,
+                request_fingerprint,
+                decision_id,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                record.idempotency_key,
+                record.request_fingerprint,
+                str(record.decision_id),
+                record.created_at.isoformat(),
+            ),
+        )

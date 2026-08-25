@@ -2,8 +2,21 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
+import sqlite3
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from typing import Annotated
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+)
+
+from app.idempotency import (
+    IdempotencyRecord,
+    build_request_fingerprint,
+)
 
 from app.approval_models import (
     ApprovalRecord,
@@ -40,11 +53,6 @@ async def lifespan(_: FastAPI):
     evidence_store.initialize()
     yield
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    evidence_store.initialize()
-    yield
-
 
 app = FastAPI(
     title="RegTrace API",
@@ -55,6 +63,45 @@ app = FastAPI(
 
 def get_evidence_store() -> EvidenceStore:
     return evidence_store
+
+def _get_idempotent_authorization(
+    store: EvidenceStore,
+    idempotency_key: str,
+    request_fingerprint: str,
+) -> AuthorizationResponse | None:
+    existing_record = store.get_idempotency_record(
+        idempotency_key
+    )
+
+    if existing_record is None:
+        return None
+
+    if (
+        existing_record.request_fingerprint
+        != request_fingerprint
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_key_conflict",
+                "message": (
+                    "Idempotency key has already been "
+                    "used with a different request."
+                ),
+            },
+        )
+
+    authorization = store.get(
+        existing_record.decision_id
+    )
+
+    if authorization is None:
+        raise RuntimeError(
+            "Idempotency record references a missing "
+            "authorization decision."
+        )
+
+    return authorization
 
 
 def _resolve_approval_request(
@@ -101,8 +148,34 @@ def health_check():
 )
 def authorize(
     request: AuthorizationRequest,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            min_length=1,
+            max_length=255,
+        ),
+    ] = None,
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> AuthorizationResponse:
+    request_fingerprint = None
+
+    if idempotency_key is not None:
+        request_fingerprint = build_request_fingerprint(
+            request
+        )
+
+        existing_authorization = (
+            _get_idempotent_authorization(
+                store=store,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+        )
+
+        if existing_authorization is not None:
+            return existing_authorization
+
     try:
         evaluation = evaluate_policy(
             request.action,
@@ -142,10 +215,44 @@ def authorize(
             requested_at=authorization.evaluated_at,
         )
 
-    store.save_authorization_with_approval(
-        authorization=authorization,
-        approval=approval,
-    )
+    idempotency_record = None
+
+    if (
+        idempotency_key is not None
+        and request_fingerprint is not None
+    ):
+        idempotency_record = IdempotencyRecord(
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            decision_id=authorization.decision_id,
+            created_at=authorization.evaluated_at,
+        )
+
+    try:
+        store.save_authorization_with_approval(
+            authorization=authorization,
+            approval=approval,
+            idempotency_record=idempotency_record,
+        )
+    except sqlite3.IntegrityError:
+        if (
+            idempotency_key is None
+            or request_fingerprint is None
+        ):
+            raise
+
+        existing_authorization = (
+            _get_idempotent_authorization(
+                store=store,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+        )
+
+        if existing_authorization is None:
+            raise
+
+        return existing_authorization
 
     return authorization
 
