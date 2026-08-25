@@ -1,18 +1,17 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.decision_models import Decision
+from app.policy_types import (
+    ConditionMatch,
+    Decision,
+    Operator,
+)
 
 
 class PolicyCondition(BaseModel):
     field: str
-    operator: Literal[
-        "greater_than",
-        "less_than",
-        "equals",
-        "not_equals",
-    ]
+    operator: Operator
     value: Any
 
 
@@ -20,6 +19,7 @@ class Policy(BaseModel):
     id: str
     version: int = Field(ge=1)
     action: str
-    condition: PolicyCondition
+    match: ConditionMatch
+    conditions: list[PolicyCondition] = Field(min_length=1)
     decision: Decision
     reason: str

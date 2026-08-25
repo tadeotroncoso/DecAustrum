@@ -2,9 +2,11 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
+from app.decision_models import PolicyEvidence
+from app.policy_types import Decision
+
 from pydantic import BaseModel, StringConstraints
 
-from app.decision_models import ConditionEvidence, Decision
 
 
 NonEmptyString = Annotated[
@@ -29,7 +31,7 @@ class AuthorizationResponse(BaseModel):
     policy: str | None
     policy_version: int | None
     reason: str
-    evidence: ConditionEvidence | None
+    evidence: PolicyEvidence | None
     agent: str
     action: str
     context: dict[str, Any]

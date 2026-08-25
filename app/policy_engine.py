@@ -3,7 +3,11 @@ from typing import Any
 
 from app.operators import evaluate_operator
 from app.policy_loader import load_policies
-from app.decision_models import ConditionEvidence, PolicyEvaluation
+from app.decision_models import (
+    ConditionEvidence,
+    PolicyEvaluation,
+    PolicyEvidence,
+)
 from app.exceptions import InvalidPolicyContextError
 
 
@@ -24,33 +28,53 @@ def evaluate_policy(
 
     final_decision = "ALLOW"
     winning_policy_id = None
+    winning_policy_version = None
     winning_reason = "No policy required approval or denial."
     winning_evidence = None
-    winning_policy_version = None
 
     for policy in policies:
         if action != policy.action:
             continue
 
-        condition = policy.condition
-        actual_value = context.get(condition.field)
+        condition_results = []
+        condition_evidence = []
 
-        if actual_value is None:
-            continue
+        for condition in policy.conditions:
+            actual_value = context.get(condition.field)
 
-        try:
-            condition_matches = evaluate_operator(
-                condition.operator,
-                actual_value,
-                condition.value,
+            if actual_value is None:
+                condition_matches = False
+            else:
+                try:
+                    condition_matches = evaluate_operator(
+                        condition.operator,
+                        actual_value,
+                        condition.value,
+                    )
+                except TypeError as exc:
+                    raise InvalidPolicyContextError(
+                        field=condition.field,
+                        operator=condition.operator,
+                    ) from exc
+
+            condition_results.append(condition_matches)
+
+            condition_evidence.append(
+                ConditionEvidence(
+                    field=condition.field,
+                    operator=condition.operator,
+                    actual_value=actual_value,
+                    expected_value=condition.value,
+                    matched=condition_matches,
+                )
             )
-        except TypeError as exc:
-            raise InvalidPolicyContextError(
-                field=condition.field,
-                operator=condition.operator,
-            ) from exc
 
-        if not condition_matches:
+        if policy.match == "all":
+            policy_matches = all(condition_results)
+        else:
+            policy_matches = any(condition_results)
+
+        if not policy_matches:
             continue
 
         policy_decision = policy.decision
@@ -61,13 +85,11 @@ def evaluate_policy(
         ):
             final_decision = policy_decision
             winning_policy_id = policy.id
-            winning_reason = policy.reason
             winning_policy_version = policy.version
-            winning_evidence = ConditionEvidence(
-                field=condition.field,
-                operator=condition.operator,
-                actual_value=actual_value,
-                expected_value=condition.value,
+            winning_reason = policy.reason
+            winning_evidence = PolicyEvidence(
+                match=policy.match,
+                conditions=condition_evidence,
             )
 
     return PolicyEvaluation(

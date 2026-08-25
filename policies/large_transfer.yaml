@@ -1,12 +1,12 @@
 id: large-transfer
 version: 1
 action: bank_transfer
+match: all
 
-condition:
-  field: amount
-  operator: greater_than
-  value: 10000
+conditions:
+  - field: amount
+    operator: greater_than
+    value: 10000
 
 decision: REQUIRE_APPROVAL
-
 reason: Bank transfers above 10000 require approval.

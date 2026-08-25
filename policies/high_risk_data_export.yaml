@@ -1,0 +1,16 @@
+id: high-risk-data-export
+version: 1
+action: export_customer_data
+match: all
+
+conditions:
+  - field: record_count
+    operator: greater_than
+    value: 1000
+
+  - field: destination_region
+    operator: not_equals
+    value: EU
+
+decision: DENY
+reason: Large data exports outside the EU are denied.

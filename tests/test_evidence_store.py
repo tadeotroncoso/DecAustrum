@@ -6,7 +6,10 @@ from uuid import uuid4
 from app.approval_models import ApprovalRecord
 
 from app.authorization_models import AuthorizationResponse
-from app.decision_models import ConditionEvidence
+from app.decision_models import (
+    ConditionEvidence,
+    PolicyEvidence,
+)
 from app.evidence_store import EvidenceStore
 
 from app.exceptions import (
@@ -29,11 +32,17 @@ def build_authorization() -> AuthorizationResponse:
         policy="unverified-account",
         policy_version=1,
         reason="Bank transfers from unverified accounts are denied.",
-        evidence=ConditionEvidence(
-            field="account_verified",
-            operator="equals",
-            actual_value=False,
-            expected_value=False,
+        evidence=PolicyEvidence(
+            match="all",
+            conditions=[
+                ConditionEvidence(
+                    field="account_verified",
+                    operator="equals",
+                    actual_value=False,
+                    expected_value=False,
+                    matched=True,
+                )
+            ],
         ),
         agent="finance-agent",
         action="bank_transfer",
@@ -105,10 +114,16 @@ def test_save_persists_authorization_decision(tmp_path):
     assert row["action"] == "bank_transfer"
 
     assert json.loads(row["evidence_json"]) == {
-        "field": "account_verified",
-        "operator": "equals",
-        "actual_value": False,
-        "expected_value": False,
+        "match": "all",
+        "conditions": [
+            {
+                "field": "account_verified",
+                "operator": "equals",
+                "actual_value": False,
+                "expected_value": False,
+                "matched": True,
+            }
+        ],
     }
 
     assert json.loads(row["context_json"]) == {

@@ -1,0 +1,16 @@
+id: sensitive-record-access
+version: 1
+action: access_customer_record
+match: any
+
+conditions:
+  - field: classification
+    operator: equals
+    value: restricted
+
+  - field: contains_personal_data
+    operator: equals
+    value: true
+
+decision: REQUIRE_APPROVAL
+reason: Access to sensitive customer records requires approval.

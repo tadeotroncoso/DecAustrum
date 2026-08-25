@@ -1,12 +1,12 @@
 id: refund-limit
 version: 1
 action: refund_payment
+match: all
 
-condition:
-  field: amount
-  operator: greater_than
-  value: 500
+conditions:
+  - field: amount
+    operator: greater_than
+    value: 500
 
 decision: REQUIRE_APPROVAL
-
 reason: Refunds above 500 require approval.

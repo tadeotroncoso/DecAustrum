@@ -1,12 +1,12 @@
 id: unverified-account
 version: 1
 action: bank_transfer
+match: all
 
-condition:
-  field: account_verified
-  operator: equals
-  value: false
+conditions:
+  - field: account_verified
+    operator: equals
+    value: false
 
 decision: DENY
-
 reason: Bank transfers from unverified accounts are denied.

@@ -94,3 +94,71 @@ def test_verified_large_transfer_requires_approval():
 
     assert evaluation.decision == "REQUIRE_APPROVAL"
     assert evaluation.policy_id == "large-transfer"
+
+
+def test_all_conditions_must_match():
+    evaluation = evaluate_policy(
+        "export_customer_data",
+        {
+            "record_count": 5000,
+            "destination_region": "US",
+        },
+    )
+
+    assert evaluation.decision == "DENY"
+    assert evaluation.policy_id == "high-risk-data-export"
+    assert evaluation.evidence is not None
+    assert evaluation.evidence.match == "all"
+
+    assert [
+        condition.matched
+        for condition in evaluation.evidence.conditions
+    ] == [True, True]
+
+
+def test_all_policy_does_not_match_when_one_condition_fails():
+    evaluation = evaluate_policy(
+        "export_customer_data",
+        {
+            "record_count": 5000,
+            "destination_region": "EU",
+        },
+    )
+
+    assert evaluation.decision == "ALLOW"
+    assert evaluation.policy_id is None
+    assert evaluation.evidence is None
+
+
+def test_any_policy_matches_when_one_condition_matches():
+    evaluation = evaluate_policy(
+        "access_customer_record",
+        {
+            "classification": "public",
+            "contains_personal_data": True,
+        },
+    )
+
+    assert evaluation.decision == "REQUIRE_APPROVAL"
+    assert evaluation.policy_id == "sensitive-record-access"
+    assert evaluation.evidence is not None
+    assert evaluation.evidence.match == "any"
+
+    assert [
+        condition.matched
+        for condition in evaluation.evidence.conditions
+    ] == [False, True]
+
+
+def test_any_policy_fails_when_no_conditions_match():
+    evaluation = evaluate_policy(
+        "access_customer_record",
+        {
+            "classification": "public",
+            "contains_personal_data": False,
+        },
+    )
+
+    assert evaluation.decision == "ALLOW"
+    assert evaluation.policy_id is None
+    assert evaluation.evidence is None
