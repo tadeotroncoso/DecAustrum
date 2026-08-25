@@ -7,6 +7,7 @@ from app.decision_models import (
     ConditionEvidence,
     PolicyEvaluation,
     PolicyEvidence,
+    PolicyTraceEntry,
 )
 from app.exceptions import InvalidPolicyContextError
 
@@ -31,6 +32,7 @@ def evaluate_policy(
     winning_policy_version = None
     winning_reason = "No policy required approval or denial."
     winning_evidence = None
+    policy_trace = []
 
     for policy in policies:
         if action != policy.action:
@@ -74,6 +76,22 @@ def evaluate_policy(
         else:
             policy_matches = any(condition_results)
 
+        policy_evidence = PolicyEvidence(
+            match=policy.match,
+            conditions=condition_evidence,
+        )
+
+        policy_trace.append(
+            PolicyTraceEntry(
+                policy_id=policy.id,
+                policy_version=policy.version,
+                decision=policy.decision,
+                reason=policy.reason,
+                matched=policy_matches,
+                evidence=policy_evidence,
+            )
+        )
+
         if not policy_matches:
             continue
 
@@ -98,4 +116,5 @@ def evaluate_policy(
         policy_version=winning_policy_version,
         reason=winning_reason,
         evidence=winning_evidence,
+        trace=policy_trace,
     )

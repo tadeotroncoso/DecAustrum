@@ -162,3 +162,50 @@ def test_any_policy_fails_when_no_conditions_match():
     assert evaluation.decision == "ALLOW"
     assert evaluation.policy_id is None
     assert evaluation.evidence is None
+
+def test_trace_records_all_matching_candidates():
+    evaluation = evaluate_policy(
+        "bank_transfer",
+        {
+            "amount": 25000,
+            "account_verified": False,
+        },
+    )
+
+    trace_by_policy = {
+        entry.policy_id: entry
+        for entry in evaluation.trace
+    }
+
+    assert evaluation.decision == "DENY"
+
+    assert trace_by_policy["large-transfer"].matched is True
+    assert (
+        trace_by_policy["large-transfer"].decision
+        == "REQUIRE_APPROVAL"
+    )
+
+    assert trace_by_policy["unverified-account"].matched is True
+    assert (
+        trace_by_policy["unverified-account"].decision
+        == "DENY"
+    )
+
+
+def test_trace_records_candidates_that_do_not_match():
+    evaluation = evaluate_policy(
+        "bank_transfer",
+        {
+            "amount": 5000,
+            "account_verified": True,
+        },
+    )
+
+    trace_by_policy = {
+        entry.policy_id: entry
+        for entry in evaluation.trace
+    }
+
+    assert evaluation.decision == "ALLOW"
+    assert trace_by_policy["large-transfer"].matched is False
+    assert trace_by_policy["unverified-account"].matched is False

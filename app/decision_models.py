@@ -21,6 +21,14 @@ class PolicyEvidence(BaseModel):
     match: ConditionMatch
     conditions: list[ConditionEvidence]
 
+class PolicyTraceEntry(BaseModel):
+    policy_id: str
+    policy_version: int
+    decision: Decision
+    reason: str
+    matched: bool
+    evidence: PolicyEvidence
+
 
 class PolicyEvaluation(BaseModel):
     decision: Decision
@@ -28,3 +36,4 @@ class PolicyEvaluation(BaseModel):
     policy_version: int | None = None
     reason: str
     evidence: PolicyEvidence | None = None
+    trace: list[PolicyTraceEntry]
