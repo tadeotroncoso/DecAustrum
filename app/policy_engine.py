@@ -3,6 +3,7 @@ from typing import Any
 
 from app.operators import evaluate_operator
 from app.policy_loader import load_policies
+from app.policy_models import Policy
 from app.decision_models import (
     ConditionEvidence,
     PolicyEvaluation,
@@ -24,8 +25,11 @@ DECISION_PRIORITY = {
 def evaluate_policy(
     action: str,
     context: dict[str, Any],
+    *,
+    policies: list[Policy] | None = None,
 ) -> PolicyEvaluation:
-    policies = load_policies(POLICIES_DIRECTORY)
+    if policies is None:
+        policies = load_policies(POLICIES_DIRECTORY)
 
     final_decision = "ALLOW"
     winning_policy_id = None

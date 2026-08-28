@@ -17,6 +17,8 @@ from app.project_models import (
 from app.authorization_models import AuthorizationResponse
 from app.evidence_store import EvidenceStore
 from app.main import app, get_evidence_store
+from app.policy_engine import POLICIES_DIRECTORY
+from app.policy_loader import load_policies
 
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -47,6 +49,12 @@ def temporary_evidence_store(tmp_path, monkeypatch):
     bootstrap_default_project(
         store=store,
         api_key=TEST_API_KEY,
+    )
+
+    store.seed_project_policies(
+        project_id=DEFAULT_PROJECT_ID,
+        policies=load_policies(POLICIES_DIRECTORY),
+        seeded_at=datetime.now(timezone.utc),
     )
 
     app.dependency_overrides[get_evidence_store] = lambda: store
@@ -1546,6 +1554,7 @@ def test_decisions_are_isolated_between_projects(
     store.save_project_with_api_key(
         project=second_project,
         api_key=second_api_key,
+        policies=load_policies(POLICIES_DIRECTORY),
     )
 
     second_response = unauthenticated_client.post(
@@ -1604,6 +1613,7 @@ def test_approval_endpoints_are_isolated_between_projects(
     store.save_project_with_api_key(
         project=second_project,
         api_key=second_api_key,
+        policies=load_policies(POLICIES_DIRECTORY),
     )
 
     create_response = unauthenticated_client.post(
@@ -1671,6 +1681,7 @@ def test_idempotency_keys_are_scoped_to_project(
     store.save_project_with_api_key(
         project=second_project,
         api_key=second_api_key,
+        policies=load_policies(POLICIES_DIRECTORY),
     )
 
     first_response = client.post(

@@ -21,7 +21,9 @@ from app.evidence_store import EvidenceStore
 from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
+    PolicyVersionConflictError,
 )
+from app.policy_models import Policy
 
 from app.api_keys import (
     ProjectApiKeyRecord,
@@ -115,6 +117,32 @@ def build_project_api_key(
             5,
             tzinfo=timezone.utc,
         ),
+    )
+
+
+def build_policy(
+    *,
+    policy_id: str = "refund-limit",
+    version: int = 1,
+    amount: int = 500,
+    decision: str = "REQUIRE_APPROVAL",
+) -> Policy:
+    return Policy.model_validate(
+        {
+            "id": policy_id,
+            "version": version,
+            "action": "refund_payment",
+            "match": "all",
+            "conditions": [
+                {
+                    "field": "amount",
+                    "operator": "greater_than",
+                    "value": amount,
+                }
+            ],
+            "decision": decision,
+            "reason": f"Refund policy version {version}.",
+        }
     )
 
 def test_initialize_creates_decisions_table(tmp_path):
@@ -1475,3 +1503,165 @@ def test_idempotency_keys_are_scoped_to_project(
         project_id=second_authorization.project_id,
         idempotency_key="shared-key",
     ) == second_record
+
+
+def test_initialize_creates_project_policies_table(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    with sqlite3.connect(store.database_path) as connection:
+        columns = connection.execute(
+            "PRAGMA table_info(project_policies)"
+        ).fetchall()
+
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(project_policies)"
+        ).fetchall()
+
+    assert {
+        column[1]
+        for column in columns
+    } == {
+        "project_id",
+        "policy_id",
+        "version",
+        "policy_json",
+        "enabled",
+        "updated_at",
+    }
+
+    assert {
+        column[1]
+        for column in columns
+        if column[5] > 0
+    } == {
+        "project_id",
+        "policy_id",
+    }
+
+    assert len(foreign_keys) == 1
+    assert foreign_keys[0][2] == "projects"
+    assert foreign_keys[0][3] == "project_id"
+    assert foreign_keys[0][4] == "project_id"
+
+
+def test_project_policies_are_isolated_by_project(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    first_project = build_project()
+    second_project = build_project()
+    seeded_at = datetime.now(timezone.utc)
+    initial_policy = build_policy()
+
+    store.save_project(first_project)
+    store.save_project(second_project)
+
+    store.seed_project_policies(
+        project_id=first_project.project_id,
+        policies=[initial_policy],
+        seeded_at=seeded_at,
+    )
+    store.seed_project_policies(
+        project_id=second_project.project_id,
+        policies=[initial_policy],
+        seeded_at=seeded_at,
+    )
+
+    updated_policy = build_policy(
+        version=2,
+        amount=100,
+        decision="DENY",
+    )
+
+    store.save_project_policy(
+        project_id=first_project.project_id,
+        policy=updated_policy,
+        updated_at=seeded_at + timedelta(minutes=1),
+    )
+
+    assert store.get_project_policy(
+        project_id=first_project.project_id,
+        policy_id="refund-limit",
+    ) == updated_policy
+
+    assert store.get_project_policy(
+        project_id=second_project.project_id,
+        policy_id="refund-limit",
+    ) == initial_policy
+
+
+def test_project_policy_requires_next_version(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    project = build_project()
+    policy = build_policy()
+
+    store.save_project(project)
+    store.seed_project_policies(
+        project_id=project.project_id,
+        policies=[policy],
+        seeded_at=project.created_at,
+    )
+
+    with pytest.raises(
+        PolicyVersionConflictError
+    ) as exc_info:
+        store.save_project_policy(
+            project_id=project.project_id,
+            policy=policy,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    assert exc_info.value.expected_version == 2
+    assert exc_info.value.provided_version == 1
+
+
+def test_disabled_policy_is_not_reseeded(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    project = build_project()
+    policy = build_policy()
+    disabled_at = project.created_at + timedelta(minutes=1)
+
+    store.save_project(project)
+    store.seed_project_policies(
+        project_id=project.project_id,
+        policies=[policy],
+        seeded_at=project.created_at,
+    )
+
+    first_result = store.disable_project_policy(
+        project_id=project.project_id,
+        policy_id=policy.id,
+        updated_at=disabled_at,
+    )
+
+    store.seed_project_policies(
+        project_id=project.project_id,
+        policies=[policy],
+        seeded_at=disabled_at + timedelta(minutes=1),
+    )
+
+    second_result = store.disable_project_policy(
+        project_id=project.project_id,
+        policy_id=policy.id,
+        updated_at=disabled_at + timedelta(minutes=2),
+    )
+
+    assert first_result is not None
+    assert first_result.enabled is False
+    assert second_result == first_result
+    assert store.list_project_policies(
+        project.project_id
+    ) == []

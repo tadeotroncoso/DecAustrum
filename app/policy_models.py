@@ -1,4 +1,6 @@
+from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -27,4 +29,16 @@ class Policy(BaseModel):
 
 class PolicyPage(BaseModel):
     items: list[Policy]
+    total: int
+
+
+class ProjectPolicyConfiguration(BaseModel):
+    project_id: UUID
+    policy: Policy
+    enabled: bool
+    updated_at: datetime
+
+
+class ProjectPolicyConfigurationPage(BaseModel):
+    items: list[ProjectPolicyConfiguration]
     total: int

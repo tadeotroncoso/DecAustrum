@@ -46,6 +46,7 @@ from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
     InvalidPolicyContextError,
+    PolicyVersionConflictError,
 )
 from app.policy_engine import (
     POLICIES_DIRECTORY,
@@ -62,9 +63,15 @@ from app.security import (
 )
 
 from app.policy_loader import load_policies
-from app.policy_models import Policy, PolicyPage
+from app.policy_models import (
+    Policy,
+    PolicyPage,
+    ProjectPolicyConfiguration,
+    ProjectPolicyConfigurationPage,
+)
 
 from app.project_models import (
+    DEFAULT_PROJECT_ID,
     Project,
     ProjectCreateRequest,
     ProjectProvisioningResponse,
@@ -77,12 +84,20 @@ evidence_store = EvidenceStore(DATABASE_PATH)
 async def lifespan(_: FastAPI):
     api_key = get_configured_api_key()
 
-    load_policies(POLICIES_DIRECTORY)
+    policy_templates = load_policies(
+        POLICIES_DIRECTORY
+    )
     evidence_store.initialize()
 
     bootstrap_default_project(
         store=evidence_store,
         api_key=api_key,
+    )
+
+    evidence_store.seed_project_policies(
+        project_id=DEFAULT_PROJECT_ID,
+        policies=policy_templates,
+        seeded_at=datetime.now(timezone.utc),
     )
 
     yield
@@ -144,7 +159,7 @@ def _get_project_or_404(
 
     return project
 
-def get_active_policies() -> list[Policy]:
+def get_policy_templates() -> list[Policy]:
     return load_policies(POLICIES_DIRECTORY)
 
 def _get_idempotent_authorization(
@@ -237,6 +252,9 @@ def health_check():
 )
 def provision_project(
     request: ProjectCreateRequest,
+    policy_templates: list[Policy] = Depends(
+        get_policy_templates
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ProjectProvisioningResponse:
     created_at = datetime.now(timezone.utc)
@@ -261,6 +279,7 @@ def provision_project(
     store.save_project_with_api_key(
         project=project,
         api_key=api_key_record,
+        policies=policy_templates,
     )
 
     return ProjectProvisioningResponse(
@@ -388,14 +407,188 @@ def revoke_project_api_key(
 
     return revoked_key
 
+
+def _get_project_policy_or_404(
+    project_id: UUID,
+    policy_id: str,
+    store: EvidenceStore,
+) -> ProjectPolicyConfiguration:
+    configuration = (
+        store.get_project_policy_configuration(
+            project_id=project_id,
+            policy_id=policy_id,
+        )
+    )
+
+    if configuration is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "policy_not_found",
+                "message": (
+                    f"Policy '{policy_id}' was not found "
+                    f"for project '{project_id}'."
+                ),
+            },
+        )
+
+    return configuration
+
+
+@app.get(
+    "/v1/admin/projects/{project_id}/policies",
+    response_model=ProjectPolicyConfigurationPage,
+    dependencies=[Depends(require_admin_access)],
+)
+def list_project_policy_configurations(
+    project_id: UUID,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectPolicyConfigurationPage:
+    _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    configurations = (
+        store.list_project_policy_configurations(
+            project_id=project_id,
+        )
+    )
+
+    return ProjectPolicyConfigurationPage(
+        items=configurations,
+        total=len(configurations),
+    )
+
+
+@app.get(
+    (
+        "/v1/admin/projects/{project_id}"
+        "/policies/{policy_id}"
+    ),
+    response_model=ProjectPolicyConfiguration,
+    dependencies=[Depends(require_admin_access)],
+)
+def get_project_policy_configuration(
+    project_id: UUID,
+    policy_id: str,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectPolicyConfiguration:
+    _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    return _get_project_policy_or_404(
+        project_id=project_id,
+        policy_id=policy_id,
+        store=store,
+    )
+
+
+@app.put(
+    (
+        "/v1/admin/projects/{project_id}"
+        "/policies/{policy_id}"
+    ),
+    response_model=ProjectPolicyConfiguration,
+    dependencies=[Depends(require_admin_access)],
+)
+def configure_project_policy(
+    project_id: UUID,
+    policy_id: str,
+    policy: Policy,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectPolicyConfiguration:
+    _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    if policy.id != policy_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "policy_id_mismatch",
+                "message": (
+                    f"Policy ID '{policy.id}' does not match "
+                    f"path policy ID '{policy_id}'."
+                ),
+                "path_policy_id": policy_id,
+                "body_policy_id": policy.id,
+            },
+        )
+
+    try:
+        return store.save_project_policy(
+            project_id=project_id,
+            policy=policy,
+            updated_at=datetime.now(timezone.utc),
+        )
+    except PolicyVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "policy_version_conflict",
+                "message": str(exc),
+                "expected_version": exc.expected_version,
+                "provided_version": exc.provided_version,
+            },
+        ) from exc
+
+
+@app.delete(
+    (
+        "/v1/admin/projects/{project_id}"
+        "/policies/{policy_id}"
+    ),
+    response_model=ProjectPolicyConfiguration,
+    dependencies=[Depends(require_admin_access)],
+)
+def disable_project_policy(
+    project_id: UUID,
+    policy_id: str,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectPolicyConfiguration:
+    _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    configuration = store.disable_project_policy(
+        project_id=project_id,
+        policy_id=policy_id,
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    if configuration is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "policy_not_found",
+                "message": (
+                    f"Policy '{policy_id}' was not found "
+                    f"for project '{project_id}'."
+                ),
+            },
+        )
+
+    return configuration
+
 @app.get(
     "/v1/policies",
     response_model=PolicyPage,
-    dependencies=[Depends(get_authenticated_project)],
 )
 def list_active_policies(
-    policies: list[Policy] = Depends(get_active_policies),
+    project: Project = Depends(
+        get_authenticated_project
+    ),
+    store: EvidenceStore = Depends(get_evidence_store),
 ) -> PolicyPage:
+    policies = store.list_project_policies(
+        project.project_id
+    )
+
     return PolicyPage(
         items=policies,
         total=len(policies),
@@ -405,15 +598,21 @@ def list_active_policies(
 @app.get(
     "/v1/policies/{policy_id}",
     response_model=Policy,
-    dependencies=[Depends(get_authenticated_project)],
 )
 def get_active_policy(
     policy_id: str,
-    policies: list[Policy] = Depends(get_active_policies),
+    project: Project = Depends(
+        get_authenticated_project
+    ),
+    store: EvidenceStore = Depends(get_evidence_store),
 ) -> Policy:
-    for policy in policies:
-        if policy.id == policy_id:
-            return policy
+    policy = store.get_project_policy(
+        project_id=project.project_id,
+        policy_id=policy_id,
+    )
+
+    if policy is not None:
+        return policy
 
     raise HTTPException(
         status_code=404,
@@ -468,6 +667,9 @@ def authorize(
         evaluation = evaluate_policy(
             request.action,
             request.context,
+            policies=store.list_project_policies(
+                project.project_id
+            ),
         )
     except InvalidPolicyContextError as exc:
         raise HTTPException(

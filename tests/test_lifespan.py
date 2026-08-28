@@ -52,6 +52,25 @@ def test_lifespan_initializes_application(
         fake_bootstrap_default_project,
     )
 
+    def fake_seed_project_policies(
+        project_id,
+        policies,
+        seeded_at,
+    ):
+        events.append(
+            (
+                "seed",
+                project_id,
+                policies,
+            )
+        )
+
+    monkeypatch.setattr(
+        main_module.evidence_store,
+        "seed_project_policies",
+        fake_seed_project_policies,
+    )
+
     async def run_lifespan():
         async with main_module.lifespan(
             main_module.app
@@ -71,6 +90,11 @@ def test_lifespan_initializes_application(
             "bootstrap",
             main_module.evidence_store,
             "configured-api-key",
+        ),
+        (
+            "seed",
+            main_module.DEFAULT_PROJECT_ID,
+            [],
         ),
         "running",
     ]

@@ -46,3 +46,20 @@ class DuplicatePolicyIdError(Exception):
         super().__init__(
             f"Policy id '{policy_id}' is defined more than once."
         )
+
+
+class PolicyVersionConflictError(Exception):
+    def __init__(
+        self,
+        policy_id: str,
+        expected_version: int,
+        provided_version: int,
+    ) -> None:
+        self.policy_id = policy_id
+        self.expected_version = expected_version
+        self.provided_version = provided_version
+
+        super().__init__(
+            f"Policy '{policy_id}' must use version "
+            f"{expected_version}, not {provided_version}."
+        )
