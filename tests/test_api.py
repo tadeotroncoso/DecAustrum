@@ -1143,3 +1143,70 @@ def test_decisions_are_isolated_between_projects(
 
     assert default_project_list.status_code == 200
     assert default_project_list.json()["total"] == 0
+
+def test_approval_endpoints_are_isolated_between_projects(
+    temporary_evidence_store,
+):
+    store = temporary_evidence_store
+    created_at = datetime.now(timezone.utc)
+
+    second_project = Project(
+        project_id=uuid4(),
+        name="Second Project",
+        status="ACTIVE",
+        created_at=created_at,
+    )
+
+    second_secret = generate_project_api_key()
+
+    second_api_key = ProjectApiKeyRecord(
+        api_key_id=uuid4(),
+        project_id=second_project.project_id,
+        key_prefix=get_api_key_prefix(second_secret),
+        key_hash=hash_api_key(second_secret),
+        created_at=created_at,
+    )
+
+    store.save_project_with_api_key(
+        project=second_project,
+        api_key=second_api_key,
+    )
+
+    create_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": second_secret},
+        json={
+            "agent": "second-finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 25000,
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert create_response.status_code == 200
+    assert (
+        create_response.json()["decision"]
+        == "REQUIRE_APPROVAL"
+    )
+
+    decision_id = create_response.json()["decision_id"]
+
+    cross_project_get = client.get(
+        f"/v1/approvals/{decision_id}"
+    )
+
+    assert cross_project_get.status_code == 404
+
+    cross_project_list = client.get("/v1/approvals")
+
+    assert cross_project_list.status_code == 200
+    assert cross_project_list.json()["total"] == 0
+
+    cross_project_resolution = client.post(
+        f"/v1/approvals/{decision_id}/approve",
+        json={"resolved_by": "wrong-project-admin"},
+    )
+
+    assert cross_project_resolution.status_code == 404

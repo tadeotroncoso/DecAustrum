@@ -143,11 +143,13 @@ def _resolve_approval_request(
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
     status: ApprovalResolutionStatus,
+    project_id: UUID,
     store: EvidenceStore,
 ) -> ApprovalRecord:
     try:
         return store.resolve_approval(
             decision_id=decision_id,
+            project_id=project_id,
             status=status,
             resolved_by=resolution.resolved_by,
             resolved_at=datetime.now(timezone.utc),
@@ -452,17 +454,20 @@ def get_approval_request(
 @app.post(
     "/v1/approvals/{decision_id}/approve",
     response_model=ApprovalRecord,
-    dependencies=[Depends(get_authenticated_project)],
 )
 def approve_request(
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ApprovalRecord:
     return _resolve_approval_request(
         decision_id=decision_id,
         resolution=resolution,
         status="APPROVED",
+        project_id=project.project_id,
         store=store,
     )
 
@@ -470,16 +475,19 @@ def approve_request(
 @app.post(
     "/v1/approvals/{decision_id}/reject",
     response_model=ApprovalRecord,
-    dependencies=[Depends(get_authenticated_project)],
 )
 def reject_request(
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ApprovalRecord:
     return _resolve_approval_request(
         decision_id=decision_id,
         resolution=resolution,
         status="REJECTED",
+        project_id=project.project_id,
         store=store,
     )

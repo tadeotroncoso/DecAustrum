@@ -555,6 +555,7 @@ class EvidenceStore:
     def resolve_approval(
         self,
         decision_id: UUID,
+        project_id: UUID,
         status: ApprovalResolutionStatus,
         resolved_by: str,
         resolved_at: datetime,
@@ -571,23 +572,38 @@ class EvidenceStore:
                     resolved_by = ?
                 WHERE decision_id = ?
                 AND status = 'PENDING'
+                AND EXISTS (
+                    SELECT 1
+                    FROM authorization_decisions
+                    WHERE authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    AND authorization_decisions.project_id = ?
+                )
                 """,
                 (
                     status,
                     resolved_at.isoformat(),
                     resolved_by,
                     str(decision_id),
+                    str(project_id),
                 ),
             )
 
             if result.rowcount == 0:
                 row = connection.execute(
                     """
-                    SELECT *
+                    SELECT approval_requests.*
                     FROM approval_requests
-                    WHERE decision_id = ?
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE approval_requests.decision_id = ?
+                    AND authorization_decisions.project_id = ?
                     """,
-                    (str(decision_id),),
+                    (
+                        str(decision_id),
+                        str(project_id),
+                    ),
                 ).fetchone()
 
                 if row is None:
@@ -602,11 +618,18 @@ class EvidenceStore:
 
             row = connection.execute(
                 """
-                SELECT *
+                SELECT approval_requests.*
                 FROM approval_requests
-                WHERE decision_id = ?
+                JOIN authorization_decisions
+                    ON authorization_decisions.decision_id
+                    = approval_requests.decision_id
+                WHERE approval_requests.decision_id = ?
+                AND authorization_decisions.project_id = ?
                 """,
-                (str(decision_id),),
+                (
+                    str(decision_id),
+                    str(project_id),
+                ),
             ).fetchone()
 
         return self._row_to_approval(row)

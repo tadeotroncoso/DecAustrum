@@ -396,6 +396,7 @@ def test_resolve_pending_approval(tmp_path):
 
     resolved = store.resolve_approval(
         decision_id=approval.decision_id,
+        project_id=authorization.project_id,
         status="APPROVED",
         resolved_by="security-admin",
         resolved_at=resolved_at,
@@ -411,6 +412,7 @@ def test_cannot_resolve_approval_twice(tmp_path):
     store.initialize()
 
     authorization = build_authorization()
+
     approval = ApprovalRecord(
         decision_id=authorization.decision_id,
         status="PENDING",
@@ -424,6 +426,7 @@ def test_cannot_resolve_approval_twice(tmp_path):
 
     store.resolve_approval(
         decision_id=approval.decision_id,
+        project_id=authorization.project_id,
         status="APPROVED",
         resolved_by="first-admin",
         resolved_at=approval.requested_at,
@@ -432,6 +435,7 @@ def test_cannot_resolve_approval_twice(tmp_path):
     with pytest.raises(ApprovalAlreadyResolvedError):
         store.resolve_approval(
             decision_id=approval.decision_id,
+            project_id=authorization.project_id,
             status="REJECTED",
             resolved_by="second-admin",
             resolved_at=approval.requested_at,
@@ -448,7 +452,44 @@ def test_resolve_unknown_approval_fails(tmp_path):
             status="APPROVED",
             resolved_by="security-admin",
             resolved_at=datetime.now(timezone.utc),
+            project_id=DEFAULT_PROJECT_ID,
         )
+
+def test_approval_resolution_is_scoped_to_project(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    authorization = build_authorization()
+
+    approval = ApprovalRecord(
+        decision_id=authorization.decision_id,
+        status="PENDING",
+        requested_at=authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=authorization,
+        approval=approval,
+    )
+
+    with pytest.raises(ApprovalNotFoundError):
+        store.resolve_approval(
+            decision_id=approval.decision_id,
+            project_id=uuid4(),
+            status="APPROVED",
+            resolved_by="wrong-project-admin",
+            resolved_at=datetime.now(timezone.utc),
+        )
+
+    stored_approval = store.get_approval(
+        decision_id=approval.decision_id,
+        project_id=authorization.project_id,
+    )
+
+    assert stored_approval is not None
+    assert stored_approval.status == "PENDING"
 
 def test_initialize_migrates_legacy_decisions_table(
     tmp_path,
