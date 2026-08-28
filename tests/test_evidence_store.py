@@ -552,17 +552,128 @@ def test_initialize_creates_idempotency_records_table(
         for column in columns
     }
 
+    primary_key_columns = {
+        column[1]
+        for column in columns
+        if column[5] > 0
+    }
+
     assert column_names == {
+        "project_id",
         "idempotency_key",
         "request_fingerprint",
         "decision_id",
         "created_at",
     }
 
+    assert primary_key_columns == {
+        "project_id",
+        "idempotency_key",
+    }
+
     assert len(foreign_keys) == 1
-    assert foreign_keys[0][2] == "authorization_decisions"
+    assert foreign_keys[0][2] == (
+        "authorization_decisions"
+    )
     assert foreign_keys[0][3] == "decision_id"
     assert foreign_keys[0][4] == "decision_id"
+
+
+def test_initialize_migrates_legacy_idempotency_records(
+    tmp_path,
+):
+    database_path = tmp_path / "legacy.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    authorization = build_authorization()
+    store.save(authorization)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "DROP TABLE idempotency_records"
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE idempotency_records (
+                idempotency_key TEXT PRIMARY KEY,
+                request_fingerprint TEXT NOT NULL,
+                decision_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (decision_id)
+                    REFERENCES authorization_decisions(decision_id)
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            INSERT INTO idempotency_records (
+                idempotency_key,
+                request_fingerprint,
+                decision_id,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "legacy-key",
+                "legacy-fingerprint",
+                str(authorization.decision_id),
+                authorization.evaluated_at.isoformat(),
+            ),
+        )
+
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+
+        columns = connection.execute(
+            "PRAGMA table_info(idempotency_records)"
+        ).fetchall()
+
+        row = connection.execute(
+            """
+            SELECT *
+            FROM idempotency_records
+            WHERE project_id = ?
+            AND idempotency_key = ?
+            """,
+            (
+                str(authorization.project_id),
+                "legacy-key",
+            ),
+        ).fetchone()
+
+    column_names = {
+        column[1]
+        for column in columns
+    }
+
+    primary_key_columns = {
+        column[1]
+        for column in columns
+        if column[5] > 0
+    }
+
+    assert "project_id" in column_names
+    assert primary_key_columns == {
+        "project_id",
+        "idempotency_key",
+    }
+
+    assert row is not None
+    assert row["project_id"] == str(
+        authorization.project_id
+    )
+    assert row["request_fingerprint"] == (
+        "legacy-fingerprint"
+    )
+    assert row["decision_id"] == str(
+        authorization.decision_id
+    )
 
 
 def test_atomic_save_persists_idempotency_record(
@@ -575,6 +686,7 @@ def test_atomic_save_persists_idempotency_record(
     authorization = build_authorization()
 
     idempotency_record = IdempotencyRecord(
+        project_id=authorization.project_id,
         idempotency_key="authorization-request-123",
         request_fingerprint="fingerprint-123",
         decision_id=authorization.decision_id,
@@ -594,9 +706,13 @@ def test_atomic_save_persists_idempotency_record(
             """
             SELECT *
             FROM idempotency_records
-            WHERE idempotency_key = ?
+            WHERE project_id = ?
+            AND idempotency_key = ?
             """,
-            ("authorization-request-123",),
+            (
+                str(authorization.project_id),
+                "authorization-request-123",
+            ),
         ).fetchone()
 
     assert row is not None
@@ -606,6 +722,9 @@ def test_atomic_save_persists_idempotency_record(
     )
     assert row["created_at"] == (
         authorization.evaluated_at.isoformat()
+    )
+    assert row["project_id"] == str(
+        authorization.project_id
     )
 
 
@@ -620,6 +739,7 @@ def test_duplicate_idempotency_key_rolls_back_authorization(
     second_authorization = build_authorization()
 
     first_record = IdempotencyRecord(
+        project_id=first_authorization.project_id,
         idempotency_key="duplicate-key",
         request_fingerprint="first-fingerprint",
         decision_id=first_authorization.decision_id,
@@ -627,6 +747,7 @@ def test_duplicate_idempotency_key_rolls_back_authorization(
     )
 
     second_record = IdempotencyRecord(
+        project_id=second_authorization.project_id,
         idempotency_key="duplicate-key",
         request_fingerprint="second-fingerprint",
         decision_id=second_authorization.decision_id,
@@ -662,6 +783,7 @@ def test_get_idempotency_record_returns_saved_record(
     authorization = build_authorization()
 
     expected_record = IdempotencyRecord(
+        project_id=authorization.project_id,
         idempotency_key="saved-key",
         request_fingerprint="saved-fingerprint",
         decision_id=authorization.decision_id,
@@ -675,7 +797,8 @@ def test_get_idempotency_record_returns_saved_record(
     )
 
     loaded_record = store.get_idempotency_record(
-        "saved-key"
+        project_id=authorization.project_id,
+        idempotency_key="saved-key",
     )
 
     assert loaded_record == expected_record
@@ -689,7 +812,8 @@ def test_get_idempotency_record_returns_none_for_unknown_key(
     store.initialize()
 
     loaded_record = store.get_idempotency_record(
-        "unknown-key"
+        project_id=DEFAULT_PROJECT_ID,
+        idempotency_key="unknown-key",
     )
 
     assert loaded_record is None
@@ -1165,3 +1289,58 @@ def test_approval_queries_are_scoped_to_project(
     assert store.count_approvals(
         project_id=second_authorization.project_id,
     ) == 1
+
+def test_idempotency_keys_are_scoped_to_project(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    first_authorization = build_authorization()
+
+    second_authorization = (
+        first_authorization.model_copy(
+            update={
+                "decision_id": uuid4(),
+                "project_id": uuid4(),
+            }
+        )
+    )
+
+    first_record = IdempotencyRecord(
+        project_id=first_authorization.project_id,
+        idempotency_key="shared-key",
+        request_fingerprint="first-fingerprint",
+        decision_id=first_authorization.decision_id,
+        created_at=first_authorization.evaluated_at,
+    )
+
+    second_record = IdempotencyRecord(
+        project_id=second_authorization.project_id,
+        idempotency_key="shared-key",
+        request_fingerprint="second-fingerprint",
+        decision_id=second_authorization.decision_id,
+        created_at=second_authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=first_authorization,
+        approval=None,
+        idempotency_record=first_record,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=second_authorization,
+        approval=None,
+        idempotency_record=second_record,
+    )
+
+    assert store.get_idempotency_record(
+        project_id=first_authorization.project_id,
+        idempotency_key="shared-key",
+    ) == first_record
+
+    assert store.get_idempotency_record(
+        project_id=second_authorization.project_id,
+        idempotency_key="shared-key",
+    ) == second_record

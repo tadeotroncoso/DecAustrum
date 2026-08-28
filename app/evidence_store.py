@@ -56,10 +56,12 @@ CREATE TABLE IF NOT EXISTS approval_requests (
 
 CREATE_IDEMPOTENCY_RECORDS_TABLE = """
 CREATE TABLE IF NOT EXISTS idempotency_records (
-    idempotency_key TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
     request_fingerprint TEXT NOT NULL,
     decision_id TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, idempotency_key),
     FOREIGN KEY (decision_id)
         REFERENCES authorization_decisions(decision_id)
 )
@@ -132,6 +134,73 @@ class EvidenceStore:
                 """
             )
 
+    @staticmethod
+    def _migrate_idempotency_records_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        columns = connection.execute(
+            "PRAGMA table_info(idempotency_records)"
+        ).fetchall()
+
+        column_names = {
+            column[1]
+            for column in columns
+        }
+
+        primary_key_columns = {
+            column[1]
+            for column in columns
+            if column[5] > 0
+        }
+
+        expected_primary_key = {
+            "project_id",
+            "idempotency_key",
+        }
+
+        if (
+            "project_id" in column_names
+            and primary_key_columns == expected_primary_key
+        ):
+            return
+
+        connection.execute(
+            """
+            ALTER TABLE idempotency_records
+            RENAME TO legacy_idempotency_records
+            """
+        )
+
+        connection.execute(
+            CREATE_IDEMPOTENCY_RECORDS_TABLE
+        )
+
+        connection.execute(
+            """
+            INSERT INTO idempotency_records (
+                project_id,
+                idempotency_key,
+                request_fingerprint,
+                decision_id,
+                created_at
+            )
+            SELECT
+                authorization_decisions.project_id,
+                legacy_idempotency_records.idempotency_key,
+                legacy_idempotency_records.request_fingerprint,
+                legacy_idempotency_records.decision_id,
+                legacy_idempotency_records.created_at
+            FROM legacy_idempotency_records
+            JOIN authorization_decisions
+                ON authorization_decisions.decision_id
+                = legacy_idempotency_records.decision_id
+            """
+        )
+
+        connection.execute(
+            "DROP TABLE legacy_idempotency_records"
+        )
+
     def initialize(self) -> None:
         self.database_path.parent.mkdir(
             parents=True,
@@ -145,6 +214,10 @@ class EvidenceStore:
             self._migrate_decisions_table(connection)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
             connection.execute(CREATE_IDEMPOTENCY_RECORDS_TABLE)
+
+            self._migrate_idempotency_records_table(
+                connection
+            )
 
     @staticmethod
     def _insert_project(
@@ -347,6 +420,7 @@ class EvidenceStore:
 
     def get_idempotency_record(
         self,
+        project_id: UUID,
         idempotency_key: str,
     ) -> IdempotencyRecord | None:
         with self._connect() as connection:
@@ -355,14 +429,19 @@ class EvidenceStore:
             row = connection.execute(
                 """
                 SELECT
+                    project_id,
                     idempotency_key,
                     request_fingerprint,
                     decision_id,
                     created_at
                 FROM idempotency_records
-                WHERE idempotency_key = ?
+                WHERE project_id = ?
+                AND idempotency_key = ?
                 """,
-                (idempotency_key,),
+                (
+                    str(project_id),
+                    idempotency_key,
+                ),
             ).fetchone()
 
         if row is None:
@@ -370,6 +449,7 @@ class EvidenceStore:
 
         return IdempotencyRecord.model_validate(
             {
+                "project_id": row["project_id"],
                 "idempotency_key": row["idempotency_key"],
                 "request_fingerprint": (
                     row["request_fingerprint"]
@@ -538,6 +618,15 @@ class EvidenceStore:
                 )
 
             if idempotency_record is not None:
+                if (
+                    idempotency_record.project_id
+                    != authorization.project_id
+                ):
+                    raise ValueError(
+                        "Idempotency record project_id must match "
+                        "authorization project_id."
+                    )
+
                 if (
                     idempotency_record.decision_id
                     != authorization.decision_id
@@ -738,14 +827,16 @@ class EvidenceStore:
         connection.execute(
             """
             INSERT INTO idempotency_records (
+                project_id,
                 idempotency_key,
                 request_fingerprint,
                 decision_id,
                 created_at
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
+                str(record.project_id),
                 record.idempotency_key,
                 record.request_fingerprint,
                 str(record.decision_id),

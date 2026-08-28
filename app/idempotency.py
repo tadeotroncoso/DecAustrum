@@ -23,6 +23,7 @@ def build_request_fingerprint(
     ).hexdigest()
 
 class IdempotencyRecord(BaseModel):
+    project_id: UUID
     idempotency_key: str
     request_fingerprint: str
     decision_id: UUID

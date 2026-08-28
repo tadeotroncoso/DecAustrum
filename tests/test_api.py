@@ -964,14 +964,20 @@ def test_authorize_recovers_from_idempotency_race(
     original_get = store.get_idempotency_record
     lookup_count = 0
 
-    def miss_first_lookup(idempotency_key: str):
+    def miss_first_lookup(
+        project_id: UUID,
+        idempotency_key: str,
+    ):
         nonlocal lookup_count
         lookup_count += 1
 
         if lookup_count == 1:
             return None
 
-        return original_get(idempotency_key)
+        return original_get(
+            project_id=project_id,
+            idempotency_key=idempotency_key,
+        )
 
     monkeypatch.setattr(
         store,
@@ -1210,3 +1216,71 @@ def test_approval_endpoints_are_isolated_between_projects(
     )
 
     assert cross_project_resolution.status_code == 404
+
+def test_idempotency_keys_are_scoped_to_project(
+    temporary_evidence_store,
+):
+    store = temporary_evidence_store
+    created_at = datetime.now(timezone.utc)
+
+    second_project = Project(
+        project_id=uuid4(),
+        name="Second Project",
+        status="ACTIVE",
+        created_at=created_at,
+    )
+
+    second_secret = generate_project_api_key()
+
+    second_api_key = ProjectApiKeyRecord(
+        api_key_id=uuid4(),
+        project_id=second_project.project_id,
+        key_prefix=get_api_key_prefix(second_secret),
+        key_hash=hash_api_key(second_secret),
+        created_at=created_at,
+    )
+
+    store.save_project_with_api_key(
+        project=second_project,
+        api_key=second_api_key,
+    )
+
+    first_response = client.post(
+        "/v1/authorize",
+        headers={
+            "Idempotency-Key": "shared-key",
+        },
+        json={
+            "agent": "first-agent",
+            "action": "send_email",
+            "context": {
+                "recipient": "first@example.com",
+            },
+        },
+    )
+
+    assert first_response.status_code == 200
+
+    second_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={
+            "X-API-Key": second_secret,
+            "Idempotency-Key": "shared-key",
+        },
+        json={
+            "agent": "second-agent",
+            "action": "send_email",
+            "context": {
+                "recipient": "second@example.com",
+            },
+        },
+    )
+
+    assert second_response.status_code == 200
+    assert second_response.json()["project_id"] == str(
+        second_project.project_id
+    )
+    assert (
+        second_response.json()["decision_id"]
+        != first_response.json()["decision_id"]
+    )

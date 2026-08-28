@@ -104,7 +104,8 @@ def _get_idempotent_authorization(
     project_id: UUID,
 ) -> AuthorizationResponse | None:
     existing_record = store.get_idempotency_record(
-        idempotency_key
+        project_id=project_id,
+        idempotency_key=idempotency_key,
     )
 
     if existing_record is None:
@@ -300,6 +301,7 @@ def authorize(
         and request_fingerprint is not None
     ):
         idempotency_record = IdempotencyRecord(
+            project_id=project.project_id,
             idempotency_key=idempotency_key,
             request_fingerprint=request_fingerprint,
             decision_id=authorization.decision_id,
