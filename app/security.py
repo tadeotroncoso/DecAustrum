@@ -5,6 +5,10 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader
 
+from app.api_keys import hash_api_key
+from app.evidence_store import EvidenceStore
+from app.project_models import Project
+
 
 API_KEY_ENVIRONMENT_VARIABLE = "REGTRACE_API_KEY"
 
@@ -49,3 +53,35 @@ def require_api_key(
                 "message": "A valid API key is required.",
             },
         )
+
+def authenticate_project(
+    provided_api_key: str | None,
+    store: EvidenceStore,
+) -> Project:
+    if not provided_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "invalid_api_key",
+                "message": "A valid API key is required.",
+            },
+        )
+
+    key_hash = hash_api_key(provided_api_key)
+
+    project = (
+        store.get_active_project_by_api_key_hash(
+            key_hash
+        )
+    )
+
+    if project is None:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "invalid_api_key",
+                "message": "A valid API key is required.",
+            },
+        )
+
+    return project

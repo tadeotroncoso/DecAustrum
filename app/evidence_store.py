@@ -17,6 +17,8 @@ from app.exceptions import (
 )
 from app.project_models import Project
 
+from app.api_keys import ProjectApiKeyRecord
+
 CREATE_DECISIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS authorization_decisions (
     decision_id TEXT PRIMARY KEY,
@@ -70,6 +72,19 @@ CREATE TABLE IF NOT EXISTS projects (
 )
 """
 
+CREATE_PROJECT_API_KEYS_TABLE = """
+CREATE TABLE IF NOT EXISTS project_api_keys (
+    api_key_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    key_prefix TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id)
+)
+"""
+
 class EvidenceStore:
     def __init__(
         self,
@@ -112,32 +127,43 @@ class EvidenceStore:
 
         with self._connect() as connection:
             connection.execute(CREATE_PROJECTS_TABLE)
+            connection.execute(CREATE_PROJECT_API_KEYS_TABLE)
             connection.execute(CREATE_DECISIONS_TABLE)
             self._migrate_decisions_table(connection)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
             connection.execute(CREATE_IDEMPOTENCY_RECORDS_TABLE)
+
+    @staticmethod
+    def _insert_project(
+        connection: sqlite3.Connection,
+        project: Project,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO projects (
+                project_id,
+                name,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                str(project.project_id),
+                project.name,
+                project.status,
+                project.created_at.isoformat(),
+            ),
+        )
 
     def save_project(
         self,
         project: Project,
     ) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO projects (
-                    project_id,
-                    name,
-                    status,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    str(project.project_id),
-                    project.name,
-                    project.status,
-                    project.created_at.isoformat(),
-                ),
+            self._insert_project(
+                connection,
+                project,
             )
 
     def get_project(
@@ -627,4 +653,105 @@ class EvidenceStore:
                 str(record.decision_id),
                 record.created_at.isoformat(),
             ),
+        )
+
+    def save_project_with_api_key(
+        self,
+        project: Project,
+        api_key: ProjectApiKeyRecord,
+    ) -> None:
+        if api_key.project_id != project.project_id:
+            raise ValueError(
+                "API key project_id must match "
+                "project project_id."
+            )
+
+        with self._connect() as connection:
+            self._insert_project(
+                connection,
+                project,
+            )
+
+            self._insert_project_api_key(
+                connection,
+                api_key,
+            )
+
+
+    def save_project_api_key(
+        self,
+        api_key: ProjectApiKeyRecord,
+    ) -> None:
+        with self._connect() as connection:
+            self._insert_project_api_key(
+                connection,
+                api_key,
+            )
+
+    @staticmethod
+    def _insert_project_api_key(
+        connection: sqlite3.Connection,
+        api_key: ProjectApiKeyRecord,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO project_api_keys (
+                api_key_id,
+                project_id,
+                key_prefix,
+                key_hash,
+                created_at,
+                revoked_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(api_key.api_key_id),
+                str(api_key.project_id),
+                api_key.key_prefix,
+                api_key.key_hash,
+                api_key.created_at.isoformat(),
+                (
+                    api_key.revoked_at.isoformat()
+                    if api_key.revoked_at is not None
+                    else None
+                ),
+            ),
+        )
+
+    def get_active_project_by_api_key_hash(
+        self,
+        key_hash: str,
+    ) -> Project | None:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT
+                    projects.project_id,
+                    projects.name,
+                    projects.status,
+                    projects.created_at
+                FROM projects
+                INNER JOIN project_api_keys
+                    ON project_api_keys.project_id
+                    = projects.project_id
+                WHERE project_api_keys.key_hash = ?
+                AND project_api_keys.revoked_at IS NULL
+                AND projects.status = 'ACTIVE'
+                """,
+                (key_hash,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return Project.model_validate(
+            {
+                "project_id": row["project_id"],
+                "name": row["name"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
         )

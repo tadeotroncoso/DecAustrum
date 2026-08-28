@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 from app.project_models import Project
 
 import pytest
@@ -18,6 +18,13 @@ from app.evidence_store import EvidenceStore
 from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
+)
+
+from app.api_keys import (
+    ProjectApiKeyRecord,
+    generate_project_api_key,
+    get_api_key_prefix,
+    hash_api_key,
 )
 
 def build_authorization() -> AuthorizationResponse:
@@ -82,6 +89,26 @@ def build_project() -> Project:
             28,
             10,
             0,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+def build_project_api_key(
+    project_id: UUID,
+) -> ProjectApiKeyRecord:
+    secret = generate_project_api_key()
+
+    return ProjectApiKeyRecord(
+        api_key_id=uuid4(),
+        project_id=project_id,
+        key_prefix=get_api_key_prefix(secret),
+        key_hash=hash_api_key(secret),
+        created_at=datetime(
+            2026,
+            8,
+            28,
+            10,
+            5,
             tzinfo=timezone.utc,
         ),
     )
@@ -710,3 +737,266 @@ def test_get_project_returns_none_when_unknown(
     loaded_project = store.get_project(uuid4())
 
     assert loaded_project is None
+
+
+def test_initialize_creates_project_api_keys_table(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        columns = connection.execute(
+            "PRAGMA table_info(project_api_keys)"
+        ).fetchall()
+
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(project_api_keys)"
+        ).fetchall()
+
+    column_names = {
+        column[1]
+        for column in columns
+    }
+
+    assert column_names == {
+        "api_key_id",
+        "project_id",
+        "key_prefix",
+        "key_hash",
+        "created_at",
+        "revoked_at",
+    }
+
+    assert len(foreign_keys) == 1
+    assert foreign_keys[0][2] == "projects"
+    assert foreign_keys[0][3] == "project_id"
+    assert foreign_keys[0][4] == "project_id"
+
+
+def test_save_project_api_key_persists_hash(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+    api_key = build_project_api_key(
+        project.project_id
+    )
+
+    store.save_project(project)
+    store.save_project_api_key(api_key)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+
+        row = connection.execute(
+            """
+            SELECT *
+            FROM project_api_keys
+            WHERE api_key_id = ?
+            """,
+            (str(api_key.api_key_id),),
+        ).fetchone()
+
+    assert row is not None
+    assert row["project_id"] == str(project.project_id)
+    assert row["key_prefix"] == api_key.key_prefix
+    assert row["key_hash"] == api_key.key_hash
+    assert row["revoked_at"] is None
+
+
+def test_save_project_api_key_rejects_unknown_project(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    api_key = build_project_api_key(uuid4())
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.save_project_api_key(api_key)
+
+
+def test_api_key_hash_returns_active_project(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+    api_key = build_project_api_key(
+        project.project_id
+    )
+
+    store.save_project(project)
+    store.save_project_api_key(api_key)
+
+    loaded_project = (
+        store.get_active_project_by_api_key_hash(
+            api_key.key_hash
+        )
+    )
+
+    assert loaded_project == project
+
+
+def test_revoked_api_key_does_not_return_project(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+    api_key = build_project_api_key(
+        project.project_id
+    ).model_copy(
+        update={
+            "revoked_at": datetime(
+                2026,
+                8,
+                28,
+                11,
+                0,
+                tzinfo=timezone.utc,
+            )
+        }
+    )
+
+    store.save_project(project)
+    store.save_project_api_key(api_key)
+
+    loaded_project = (
+        store.get_active_project_by_api_key_hash(
+            api_key.key_hash
+        )
+    )
+
+    assert loaded_project is None
+
+
+def test_disabled_project_is_not_authenticated(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project().model_copy(
+        update={"status": "DISABLED"}
+    )
+
+    api_key = build_project_api_key(
+        project.project_id
+    )
+
+    store.save_project(project)
+    store.save_project_api_key(api_key)
+
+    loaded_project = (
+        store.get_active_project_by_api_key_hash(
+            api_key.key_hash
+        )
+    )
+
+    assert loaded_project is None
+
+
+def test_save_project_with_api_key_persists_both(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+    api_key = build_project_api_key(
+        project.project_id
+    )
+
+    store.save_project_with_api_key(
+        project=project,
+        api_key=api_key,
+    )
+
+    assert store.get_project(
+        project.project_id
+    ) == project
+
+    assert (
+        store.get_active_project_by_api_key_hash(
+            api_key.key_hash
+        )
+        == project
+    )
+
+
+def test_save_project_with_api_key_rejects_mismatch(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+    api_key = build_project_api_key(uuid4())
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "API key project_id must match "
+            "project project_id."
+        ),
+    ):
+        store.save_project_with_api_key(
+            project=project,
+            api_key=api_key,
+        )
+
+    assert store.get_project(
+        project.project_id
+    ) is None
+
+
+def test_duplicate_api_key_hash_rolls_back_project(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    first_project = build_project()
+    first_api_key = build_project_api_key(
+        first_project.project_id
+    )
+
+    store.save_project_with_api_key(
+        project=first_project,
+        api_key=first_api_key,
+    )
+
+    second_project = build_project()
+
+    duplicate_api_key = first_api_key.model_copy(
+        update={
+            "api_key_id": uuid4(),
+            "project_id": second_project.project_id,
+        }
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store.save_project_with_api_key(
+            project=second_project,
+            api_key=duplicate_api_key,
+        )
+
+    assert store.get_project(
+        second_project.project_id
+    ) is None
