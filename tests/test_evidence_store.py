@@ -2,7 +2,10 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
-from app.project_models import Project
+from app.project_models import (
+    DEFAULT_PROJECT_ID,
+    Project,
+)
 
 import pytest
 from app.idempotency import IdempotencyRecord
@@ -47,6 +50,7 @@ def build_authorization() -> AuthorizationResponse:
 
     return AuthorizationResponse(
         decision_id=uuid4(),
+        project_id=DEFAULT_PROJECT_ID,
         evaluated_at=datetime(
             2026,
             8,
@@ -131,6 +135,7 @@ def test_initialize_creates_decisions_table(tmp_path):
 
     assert column_names == {
         "decision_id",
+        "project_id",
         "evaluated_at",
         "decision",
         "policy_id",
@@ -167,6 +172,7 @@ def test_save_persists_authorization_decision(tmp_path):
 
     assert row is not None
     assert row["decision_id"] == str(decision_id)
+    assert row["project_id"] == str(DEFAULT_PROJECT_ID)
     assert row["evaluated_at"] == evaluated_at.isoformat()
     assert row["decision"] == "DENY"
     assert row["policy_id"] == "unverified-account"
@@ -207,9 +213,9 @@ def test_get_returns_saved_authorization(tmp_path):
     store.save(authorization)
 
     loaded_authorization = store.get(
-        authorization.decision_id
+        decision_id=authorization.decision_id,
+        project_id=authorization.project_id,
     )
-
     assert loaded_authorization == authorization
 
 
@@ -218,7 +224,10 @@ def test_get_returns_none_for_unknown_decision(tmp_path):
     store = EvidenceStore(database_path)
     store.initialize()
 
-    loaded_authorization = store.get(uuid4())
+    loaded_authorization = store.get(
+        decision_id=uuid4(),
+        project_id=DEFAULT_PROJECT_ID,
+    )
 
     assert loaded_authorization is None
     
@@ -245,17 +254,23 @@ def test_list_decisions_is_paginated_and_newest_first(
     store.save(second)
 
     first_page = store.list_decisions(
+        project_id=first.project_id,
         limit=1,
         offset=0,
     )
+
     second_page = store.list_decisions(
+        project_id=first.project_id,
         limit=1,
         offset=1,
     )
 
     assert first_page == [second]
     assert second_page == [first]
-    assert store.count() == 2
+
+    assert store.count(
+        project_id=first.project_id
+    ) == 2
 
 def test_initialize_creates_approval_requests_table(
     tmp_path,
@@ -352,7 +367,10 @@ def test_combined_save_rolls_back_on_mismatched_approval(
             approval=approval,
         )
 
-    assert store.get(authorization.decision_id) is None
+    assert store.get(
+        decision_id=authorization.decision_id,
+        project_id=authorization.project_id,
+    ) is None
 
 def test_resolve_pending_approval(tmp_path):
     store = EvidenceStore(tmp_path / "test.db")
@@ -462,10 +480,13 @@ def test_initialize_migrates_legacy_decisions_table(
             "PRAGMA table_info(authorization_decisions)"
         ).fetchall()
 
-    assert "trace_json" in {
+    column_names = {
         column[1]
         for column in columns
     }
+
+    assert "trace_json" in column_names
+    assert "project_id" in column_names
 
 def test_initialize_creates_idempotency_records_table(
     tmp_path,
@@ -584,7 +605,8 @@ def test_duplicate_idempotency_key_rolls_back_authorization(
         )
 
     assert store.get(
-        second_authorization.decision_id
+        decision_id=second_authorization.decision_id,
+        project_id=second_authorization.project_id,
     ) is None
 
 
@@ -1000,3 +1022,45 @@ def test_duplicate_api_key_hash_rolls_back_project(
     assert store.get_project(
         second_project.project_id
     ) is None
+
+def test_decision_queries_are_scoped_to_project(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    first_authorization = build_authorization()
+
+    second_authorization = (
+        first_authorization.model_copy(
+            update={
+                "decision_id": uuid4(),
+                "project_id": uuid4(),
+            }
+        )
+    )
+
+    store.save(first_authorization)
+    store.save(second_authorization)
+
+    assert store.get(
+        decision_id=first_authorization.decision_id,
+        project_id=second_authorization.project_id,
+    ) is None
+
+    assert store.list_decisions(
+        project_id=first_authorization.project_id
+    ) == [first_authorization]
+
+    assert store.list_decisions(
+        project_id=second_authorization.project_id
+    ) == [second_authorization]
+
+    assert store.count(
+        project_id=first_authorization.project_id
+    ) == 1
+
+    assert store.count(
+        project_id=second_authorization.project_id
+    ) == 1

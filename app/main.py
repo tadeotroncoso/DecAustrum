@@ -12,6 +12,7 @@ from fastapi import (
     HTTPException,
     Query,
 )
+from app.bootstrap import bootstrap_default_project
 
 from app.idempotency import (
     IdempotencyRecord,
@@ -43,21 +44,31 @@ from app.policy_engine import (
 )
 
 from app.security import (
+    api_key_header,
+    authenticate_project,
     get_configured_api_key,
-    require_api_key,
 )
 
 from app.policy_loader import load_policies
 from app.policy_models import Policy, PolicyPage
+
+from app.project_models import Project
 
 DATABASE_PATH = Path("data/regtrace.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    get_configured_api_key()
+    api_key = get_configured_api_key()
+
     load_policies(POLICIES_DIRECTORY)
     evidence_store.initialize()
+
+    bootstrap_default_project(
+        store=evidence_store,
+        api_key=api_key,
+    )
+
     yield
 
 
@@ -71,6 +82,18 @@ app = FastAPI(
 def get_evidence_store() -> EvidenceStore:
     return evidence_store
 
+def get_authenticated_project(
+    provided_api_key: Annotated[
+        str | None,
+        Depends(api_key_header),
+    ],
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> Project:
+    return authenticate_project(
+        provided_api_key=provided_api_key,
+        store=store,
+    )
+
 def get_active_policies() -> list[Policy]:
     return load_policies(POLICIES_DIRECTORY)
 
@@ -78,6 +101,7 @@ def _get_idempotent_authorization(
     store: EvidenceStore,
     idempotency_key: str,
     request_fingerprint: str,
+    project_id: UUID,
 ) -> AuthorizationResponse | None:
     existing_record = store.get_idempotency_record(
         idempotency_key
@@ -102,7 +126,8 @@ def _get_idempotent_authorization(
         )
 
     authorization = store.get(
-        existing_record.decision_id
+        decision_id=existing_record.decision_id,
+        project_id=project_id,
     )
 
     if authorization is None:
@@ -153,7 +178,7 @@ def health_check():
 @app.get(
     "/v1/policies",
     response_model=PolicyPage,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_authenticated_project)],
 )
 def list_active_policies(
     policies: list[Policy] = Depends(get_active_policies),
@@ -167,7 +192,7 @@ def list_active_policies(
 @app.get(
     "/v1/policies/{policy_id}",
     response_model=Policy,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_authenticated_project)],
 )
 def get_active_policy(
     policy_id: str,
@@ -191,7 +216,6 @@ def get_active_policy(
 @app.post(
     "/v1/authorize",
     response_model=AuthorizationResponse,
-    dependencies=[Depends(require_api_key)],
 )
 def authorize(
     request: AuthorizationRequest,
@@ -203,6 +227,9 @@ def authorize(
             max_length=255,
         ),
     ] = None,
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> AuthorizationResponse:
     request_fingerprint = None
@@ -217,6 +244,7 @@ def authorize(
                 store=store,
                 idempotency_key=idempotency_key,
                 request_fingerprint=request_fingerprint,
+                project_id=project.project_id,
             )
         )
 
@@ -241,6 +269,7 @@ def authorize(
 
     authorization = AuthorizationResponse(
         decision_id=uuid4(),
+        project_id=project.project_id,
         evaluated_at=datetime.now(timezone.utc),
         decision=evaluation.decision,
         policy=evaluation.policy_id,
@@ -293,6 +322,7 @@ def authorize(
                 store=store,
                 idempotency_key=idempotency_key,
                 request_fingerprint=request_fingerprint,
+                project_id=project.project_id,
             )
         )
 
@@ -307,19 +337,24 @@ def authorize(
 @app.get(
     "/v1/decisions",
     response_model=AuthorizationDecisionPage,
-    dependencies=[Depends(require_api_key)],
 )
 def list_authorization_decisions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> AuthorizationDecisionPage:
     return AuthorizationDecisionPage(
         items=store.list_decisions(
+            project_id=project.project_id,
             limit=limit,
             offset=offset,
         ),
-        total=store.count(),
+        total=store.count(
+            project_id=project.project_id
+        ),
         limit=limit,
         offset=offset,
     )
@@ -328,13 +363,18 @@ def list_authorization_decisions(
 @app.get(
     "/v1/decisions/{decision_id}",
     response_model=AuthorizationResponse,
-    dependencies=[Depends(require_api_key)],
 )
 def get_authorization_decision(
     decision_id: UUID,
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> AuthorizationResponse:
-    authorization = store.get(decision_id)
+    authorization = store.get(
+        decision_id=decision_id,
+        project_id=project.project_id,
+    )
 
     if authorization is None:
         raise HTTPException(
@@ -353,7 +393,7 @@ def get_authorization_decision(
 @app.get(
     "/v1/approvals",
     response_model=ApprovalRequestPage,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_authenticated_project)],
 )
 def list_approval_requests(
     status: ApprovalStatus | None = Query(default=None),
@@ -375,7 +415,7 @@ def list_approval_requests(
 @app.get(
     "/v1/approvals/{decision_id}",
     response_model=ApprovalRecord,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_authenticated_project)],
 )
 def get_approval_request(
     decision_id: UUID,
@@ -401,7 +441,7 @@ def get_approval_request(
 @app.post(
     "/v1/approvals/{decision_id}/approve",
     response_model=ApprovalRecord,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_authenticated_project)],
 )
 def approve_request(
     decision_id: UUID,
@@ -419,7 +459,7 @@ def approve_request(
 @app.post(
     "/v1/approvals/{decision_id}/reject",
     response_model=ApprovalRecord,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_authenticated_project)],
 )
 def reject_request(
     decision_id: UUID,

@@ -15,13 +15,17 @@ from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
 )
-from app.project_models import Project
+from app.project_models import (
+    DEFAULT_PROJECT_ID,
+    Project,
+)
 
 from app.api_keys import ProjectApiKeyRecord
 
 CREATE_DECISIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS authorization_decisions (
     decision_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
     evaluated_at TEXT NOT NULL,
     decision TEXT NOT NULL,
     policy_id TEXT,
@@ -116,6 +120,15 @@ class EvidenceStore:
                 ALTER TABLE authorization_decisions
                 ADD COLUMN trace_json
                 TEXT NOT NULL DEFAULT '[]'
+                """
+            )
+
+        if "project_id" not in column_names:
+            connection.execute(
+                f"""
+                ALTER TABLE authorization_decisions
+                ADD COLUMN project_id TEXT NOT NULL
+                DEFAULT '{DEFAULT_PROJECT_ID}'
                 """
             )
 
@@ -228,6 +241,7 @@ class EvidenceStore:
             """
             INSERT INTO authorization_decisions (
                 decision_id,
+                project_id,
                 evaluated_at,
                 decision,
                 policy_id,
@@ -239,10 +253,11 @@ class EvidenceStore:
                 action,
                 context_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(authorization.decision_id),
+                str(authorization.project_id),
                 authorization.evaluated_at.isoformat(),
                 authorization.decision,
                 authorization.policy,
@@ -290,6 +305,7 @@ class EvidenceStore:
         return AuthorizationResponse.model_validate(
             {
                 "decision_id": row["decision_id"],
+                "project_id": row["project_id"],
                 "evaluated_at": row["evaluated_at"],
                 "decision": row["decision"],
                 "policy": row["policy_id"],
@@ -306,6 +322,7 @@ class EvidenceStore:
     def get(
         self,
         decision_id: UUID,
+        project_id: UUID,
     ) -> AuthorizationResponse | None:
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
@@ -315,8 +332,12 @@ class EvidenceStore:
                 SELECT *
                 FROM authorization_decisions
                 WHERE decision_id = ?
+                AND project_id = ?
                 """,
-                (str(decision_id),),
+                (
+                    str(decision_id),
+                    str(project_id),
+                ),
             ).fetchone()
 
         if row is None:
@@ -361,6 +382,7 @@ class EvidenceStore:
 
     def list_decisions(
         self,
+        project_id: UUID,
         limit: int = 20,
         offset: int = 0,
     ) -> list[AuthorizationResponse]:
@@ -371,10 +393,15 @@ class EvidenceStore:
                 """
                 SELECT *
                 FROM authorization_decisions
+                WHERE project_id = ?
                 ORDER BY evaluated_at DESC, decision_id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (limit, offset),
+                (
+                    str(project_id),
+                    limit,
+                    offset,
+                ),
             ).fetchall()
 
         return [
@@ -382,13 +409,18 @@ class EvidenceStore:
             for row in rows
         ]
 
-    def count(self) -> int:
+    def count(
+        self,
+        project_id: UUID,
+    ) -> int:
         with self._connect() as connection:
             row = connection.execute(
                 """
                 SELECT COUNT(*)
                 FROM authorization_decisions
-                """
+                WHERE project_id = ?
+                """,
+                (str(project_id),),
             ).fetchone()
 
         return int(row[0])

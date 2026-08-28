@@ -1,8 +1,6 @@
 import os
-import secrets
-from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from fastapi.security import APIKeyHeader
 
 from app.api_keys import hash_api_key
@@ -29,30 +27,6 @@ def get_configured_api_key() -> str:
         )
 
     return api_key
-
-
-def require_api_key(
-    provided_api_key: Annotated[
-        str | None,
-        Depends(api_key_header),
-    ],
-) -> None:
-    configured_api_key = get_configured_api_key()
-
-    if (
-        provided_api_key is None
-        or not secrets.compare_digest(
-            provided_api_key,
-            configured_api_key,
-        )
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "code": "invalid_api_key",
-                "message": "A valid API key is required.",
-            },
-        )
 
 def authenticate_project(
     provided_api_key: str | None,

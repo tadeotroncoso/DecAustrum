@@ -29,6 +29,7 @@ class AuthorizationRequest(BaseModel):
 
 class AuthorizationResponse(BaseModel):
     decision_id: UUID
+    project_id: UUID
     evaluated_at: datetime
     decision: Decision
     policy: str | None

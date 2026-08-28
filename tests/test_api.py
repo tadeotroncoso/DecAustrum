@@ -1,12 +1,24 @@
 from fastapi.testclient import TestClient
 import pytest
 import sqlite3
+from app.bootstrap import bootstrap_default_project
+
+from app.api_keys import (
+    ProjectApiKeyRecord,
+    generate_project_api_key,
+    get_api_key_prefix,
+    hash_api_key,
+)
+from app.project_models import (
+    DEFAULT_PROJECT_ID,
+    Project,
+)
 
 from app.authorization_models import AuthorizationResponse
 from app.evidence_store import EvidenceStore
 from app.main import app, get_evidence_store
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 TEST_API_KEY = "test-api-key"
@@ -26,6 +38,11 @@ def temporary_evidence_store(tmp_path, monkeypatch):
     )
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
+
+    bootstrap_default_project(
+        store=store,
+        api_key=TEST_API_KEY,
+    )
 
     app.dependency_overrides[get_evidence_store] = lambda: store
 
@@ -312,9 +329,9 @@ def test_authorize_persists_decision(
     )
 
     stored_authorization = temporary_evidence_store.get(
-        returned_authorization.decision_id
+        decision_id=returned_authorization.decision_id,
+        project_id=returned_authorization.project_id,
     )
-
     assert stored_authorization == returned_authorization
 
 def test_get_decision_returns_stored_authorization():
@@ -1028,3 +1045,99 @@ def test_get_policy_returns_404_when_not_found():
             "Policy 'missing-policy' was not found."
         ),
     }
+
+def test_disabled_project_api_key_is_rejected(
+    temporary_evidence_store,
+):
+    store = temporary_evidence_store
+
+    with sqlite3.connect(
+        store.database_path
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE projects
+            SET status = 'DISABLED'
+            """
+        )
+
+    response = client.get("/v1/policies")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == {
+        "code": "invalid_api_key",
+        "message": "A valid API key is required.",
+    }
+
+def test_authorize_returns_authenticated_project_id():
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "test-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["project_id"] == str(
+        DEFAULT_PROJECT_ID
+    )
+
+def test_decisions_are_isolated_between_projects(
+    temporary_evidence_store,
+):
+    store = temporary_evidence_store
+    created_at = datetime.now(timezone.utc)
+
+    second_project = Project(
+        project_id=uuid4(),
+        name="Second Project",
+        status="ACTIVE",
+        created_at=created_at,
+    )
+
+    second_secret = generate_project_api_key()
+
+    second_api_key = ProjectApiKeyRecord(
+        api_key_id=uuid4(),
+        project_id=second_project.project_id,
+        key_prefix=get_api_key_prefix(second_secret),
+        key_hash=hash_api_key(second_secret),
+        created_at=created_at,
+    )
+
+    store.save_project_with_api_key(
+        project=second_project,
+        api_key=second_api_key,
+    )
+
+    second_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": second_secret},
+        json={
+            "agent": "second-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert second_response.status_code == 200
+    assert second_response.json()["project_id"] == str(
+        second_project.project_id
+    )
+
+    decision_id = second_response.json()["decision_id"]
+
+    default_project_response = client.get(
+        f"/v1/decisions/{decision_id}"
+    )
+
+    assert default_project_response.status_code == 404
+
+    default_project_list = client.get(
+        "/v1/decisions"
+    )
+
+    assert default_project_list.status_code == 200
+    assert default_project_list.json()["total"] == 0

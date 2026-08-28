@@ -4,6 +4,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, StringConstraints
 
+DEFAULT_PROJECT_ID = UUID(
+    "00000000-0000-0000-0000-000000000001"
+)
+
+DEFAULT_PROJECT_NAME = "Default Project"
+
 
 ProjectStatus = Literal[
     "ACTIVE",
