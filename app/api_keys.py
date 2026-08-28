@@ -34,6 +34,26 @@ class ProjectApiKeyRecord(BaseModel):
     revoked_at: datetime | None = None
 
 
+class ProjectApiKeyMetadata(BaseModel):
+    api_key_id: UUID
+    project_id: UUID
+    key_prefix: ApiKeyPrefix
+    created_at: datetime
+    revoked_at: datetime | None = None
+
+
+class ProjectApiKeyPage(BaseModel):
+    items: list[ProjectApiKeyMetadata]
+    total: int
+    limit: int
+    offset: int
+
+
+class ProjectApiKeyProvisioningResponse(BaseModel):
+    key: ProjectApiKeyMetadata
+    api_key: str
+
+
 def generate_project_api_key() -> str:
     return (
         API_KEY_MARKER

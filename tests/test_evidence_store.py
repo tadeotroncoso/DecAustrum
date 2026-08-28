@@ -998,6 +998,137 @@ def test_save_project_api_key_persists_hash(
     assert row["revoked_at"] is None
 
 
+def test_list_project_api_keys_is_scoped_and_paginated(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    first_project = build_project()
+    second_project = build_project()
+
+    store.save_project(first_project)
+    store.save_project(second_project)
+
+    first_key = build_project_api_key(
+        first_project.project_id
+    )
+
+    second_key = build_project_api_key(
+        first_project.project_id
+    ).model_copy(
+        update={
+            "created_at": (
+                first_key.created_at
+                + timedelta(seconds=1)
+            )
+        }
+    )
+
+    other_project_key = build_project_api_key(
+        second_project.project_id
+    )
+
+    store.save_project_api_key(first_key)
+    store.save_project_api_key(second_key)
+    store.save_project_api_key(other_project_key)
+
+    first_page = store.list_project_api_keys(
+        project_id=first_project.project_id,
+        limit=1,
+        offset=0,
+    )
+
+    second_page = store.list_project_api_keys(
+        project_id=first_project.project_id,
+        limit=1,
+        offset=1,
+    )
+
+    assert [
+        key.api_key_id
+        for key in first_page
+    ] == [second_key.api_key_id]
+
+    assert [
+        key.api_key_id
+        for key in second_page
+    ] == [first_key.api_key_id]
+
+    assert store.count_project_api_keys(
+        first_project.project_id
+    ) == 2
+
+    assert store.count_project_api_keys(
+        second_project.project_id
+    ) == 1
+
+    assert "key_hash" not in first_page[0].model_dump()
+
+
+def test_revoke_project_api_key_is_idempotent(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    project = build_project()
+    api_key = build_project_api_key(project.project_id)
+
+    store.save_project(project)
+    store.save_project_api_key(api_key)
+
+    revoked_at = api_key.created_at + timedelta(minutes=1)
+
+    first_result = store.revoke_project_api_key(
+        project_id=project.project_id,
+        api_key_id=api_key.api_key_id,
+        revoked_at=revoked_at,
+    )
+
+    second_result = store.revoke_project_api_key(
+        project_id=project.project_id,
+        api_key_id=api_key.api_key_id,
+        revoked_at=revoked_at + timedelta(minutes=1),
+    )
+
+    assert first_result is not None
+    assert first_result.revoked_at == revoked_at
+    assert second_result == first_result
+
+    assert store.get_active_project_by_api_key_hash(
+        api_key.key_hash
+    ) is None
+
+
+def test_revoke_project_api_key_is_scoped_to_project(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    first_project = build_project()
+    second_project = build_project()
+    api_key = build_project_api_key(
+        first_project.project_id
+    )
+
+    store.save_project(first_project)
+    store.save_project(second_project)
+    store.save_project_api_key(api_key)
+
+    result = store.revoke_project_api_key(
+        project_id=second_project.project_id,
+        api_key_id=api_key.api_key_id,
+        revoked_at=datetime.now(timezone.utc),
+    )
+
+    assert result is None
+    assert store.get_active_project_by_api_key_hash(
+        api_key.key_hash
+    ) == first_project
+
+
 def test_save_project_api_key_rejects_unknown_project(
     tmp_path,
 ):

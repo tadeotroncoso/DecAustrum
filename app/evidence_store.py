@@ -20,7 +20,10 @@ from app.project_models import (
     Project,
 )
 
-from app.api_keys import ProjectApiKeyRecord
+from app.api_keys import (
+    ProjectApiKeyMetadata,
+    ProjectApiKeyRecord,
+)
 
 CREATE_DECISIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS authorization_decisions (
@@ -907,6 +910,116 @@ class EvidenceStore:
                 ),
             ),
         )
+
+    @staticmethod
+    def _row_to_project_api_key_metadata(
+        row: sqlite3.Row,
+    ) -> ProjectApiKeyMetadata:
+        return ProjectApiKeyMetadata.model_validate(
+            {
+                "api_key_id": row["api_key_id"],
+                "project_id": row["project_id"],
+                "key_prefix": row["key_prefix"],
+                "created_at": row["created_at"],
+                "revoked_at": row["revoked_at"],
+            }
+        )
+
+    def list_project_api_keys(
+        self,
+        project_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[ProjectApiKeyMetadata]:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            rows = connection.execute(
+                """
+                SELECT
+                    api_key_id,
+                    project_id,
+                    key_prefix,
+                    created_at,
+                    revoked_at
+                FROM project_api_keys
+                WHERE project_id = ?
+                ORDER BY created_at DESC, api_key_id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (
+                    str(project_id),
+                    limit,
+                    offset,
+                ),
+            ).fetchall()
+
+        return [
+            self._row_to_project_api_key_metadata(row)
+            for row in rows
+        ]
+
+    def count_project_api_keys(
+        self,
+        project_id: UUID,
+    ) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM project_api_keys
+                WHERE project_id = ?
+                """,
+                (str(project_id),),
+            ).fetchone()
+
+        return int(row[0])
+
+    def revoke_project_api_key(
+        self,
+        project_id: UUID,
+        api_key_id: UUID,
+        revoked_at: datetime,
+    ) -> ProjectApiKeyMetadata | None:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            connection.execute(
+                """
+                UPDATE project_api_keys
+                SET revoked_at = COALESCE(revoked_at, ?)
+                WHERE project_id = ?
+                AND api_key_id = ?
+                """,
+                (
+                    revoked_at.isoformat(),
+                    str(project_id),
+                    str(api_key_id),
+                ),
+            )
+
+            row = connection.execute(
+                """
+                SELECT
+                    api_key_id,
+                    project_id,
+                    key_prefix,
+                    created_at,
+                    revoked_at
+                FROM project_api_keys
+                WHERE project_id = ?
+                AND api_key_id = ?
+                """,
+                (
+                    str(project_id),
+                    str(api_key_id),
+                ),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_project_api_key_metadata(row)
 
     def get_active_project_by_api_key_hash(
         self,

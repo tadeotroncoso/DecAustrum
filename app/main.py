@@ -13,6 +13,9 @@ from fastapi import (
     Query,
 )
 from app.api_keys import (
+    ProjectApiKeyMetadata,
+    ProjectApiKeyPage,
+    ProjectApiKeyProvisioningResponse,
     ProjectApiKeyRecord,
     generate_project_api_key,
     get_api_key_prefix,
@@ -120,6 +123,26 @@ def require_admin_access(
             get_configured_admin_api_key()
         ),
     )
+
+
+def _get_project_or_404(
+    project_id: UUID,
+    store: EvidenceStore,
+) -> Project:
+    project = store.get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "project_not_found",
+                "message": (
+                    f"Project '{project_id}' was not found."
+                ),
+            },
+        )
+
+    return project
 
 def get_active_policies() -> list[Policy]:
     return load_policies(POLICIES_DIRECTORY)
@@ -244,6 +267,126 @@ def provision_project(
         project=project,
         api_key=api_key,
     )
+
+
+@app.post(
+    "/v1/admin/projects/{project_id}/api-keys",
+    response_model=ProjectApiKeyProvisioningResponse,
+    status_code=201,
+    dependencies=[Depends(require_admin_access)],
+)
+def provision_project_api_key(
+    project_id: UUID,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectApiKeyProvisioningResponse:
+    project = _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    if project.status != "ACTIVE":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "project_disabled",
+                "message": (
+                    f"Project '{project_id}' is disabled."
+                ),
+            },
+        )
+
+    created_at = datetime.now(timezone.utc)
+    api_key = generate_project_api_key()
+
+    record = ProjectApiKeyRecord(
+        api_key_id=uuid4(),
+        project_id=project_id,
+        key_prefix=get_api_key_prefix(api_key),
+        key_hash=hash_api_key(api_key),
+        created_at=created_at,
+    )
+
+    store.save_project_api_key(record)
+
+    metadata = ProjectApiKeyMetadata(
+        api_key_id=record.api_key_id,
+        project_id=record.project_id,
+        key_prefix=record.key_prefix,
+        created_at=record.created_at,
+        revoked_at=record.revoked_at,
+    )
+
+    return ProjectApiKeyProvisioningResponse(
+        key=metadata,
+        api_key=api_key,
+    )
+
+
+@app.get(
+    "/v1/admin/projects/{project_id}/api-keys",
+    response_model=ProjectApiKeyPage,
+    dependencies=[Depends(require_admin_access)],
+)
+def list_project_api_keys(
+    project_id: UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectApiKeyPage:
+    _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    return ProjectApiKeyPage(
+        items=store.list_project_api_keys(
+            project_id=project_id,
+            limit=limit,
+            offset=offset,
+        ),
+        total=store.count_project_api_keys(project_id),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.delete(
+    (
+        "/v1/admin/projects/{project_id}"
+        "/api-keys/{api_key_id}"
+    ),
+    response_model=ProjectApiKeyMetadata,
+    dependencies=[Depends(require_admin_access)],
+)
+def revoke_project_api_key(
+    project_id: UUID,
+    api_key_id: UUID,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectApiKeyMetadata:
+    _get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+    revoked_key = store.revoke_project_api_key(
+        project_id=project_id,
+        api_key_id=api_key_id,
+        revoked_at=datetime.now(timezone.utc),
+    )
+
+    if revoked_key is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "api_key_not_found",
+                "message": (
+                    f"API key '{api_key_id}' was not found "
+                    f"for project '{project_id}'."
+                ),
+            },
+        )
+
+    return revoked_key
 
 @app.get(
     "/v1/policies",

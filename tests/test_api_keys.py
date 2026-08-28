@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.api_keys import (
+    ProjectApiKeyMetadata,
     ProjectApiKeyRecord,
     generate_project_api_key,
     get_api_key_prefix,
@@ -61,3 +62,17 @@ def test_project_api_key_record_rejects_invalid_hash():
             key_hash="not-a-valid-sha256-hash",
             created_at=datetime.now(timezone.utc),
         )
+
+
+def test_public_api_key_metadata_excludes_secrets():
+    metadata = ProjectApiKeyMetadata(
+        api_key_id=uuid4(),
+        project_id=uuid4(),
+        key_prefix="rtk_example1",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    public_data = metadata.model_dump()
+
+    assert "api_key" not in public_data
+    assert "key_hash" not in public_data

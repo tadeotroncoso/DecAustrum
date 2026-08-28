@@ -56,6 +56,22 @@ def temporary_evidence_store(tmp_path, monkeypatch):
     app.dependency_overrides.clear()
 
 
+def provision_test_project(
+    name: str = "Managed Project",
+) -> dict:
+    response = unauthenticated_client.post(
+        "/v1/admin/projects",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+        json={"name": name},
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
 def test_authorize_returns_deny_with_winning_policy():
     response = client.post(
         "/v1/authorize",
@@ -988,6 +1004,291 @@ def test_project_provisioning_rejects_blank_name():
     )
 
     assert response.status_code == 422
+
+
+def test_admin_can_create_additional_project_api_key():
+    provisioned = provision_test_project()
+    project_id = provisioned["project"]["project_id"]
+
+    response = unauthenticated_client.post(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    issued_api_key = data["api_key"]
+    metadata = data["key"]
+
+    assert issued_api_key.startswith("rtk_")
+    assert issued_api_key != provisioned["api_key"]
+    assert metadata["project_id"] == project_id
+    assert metadata["key_prefix"] == (
+        get_api_key_prefix(issued_api_key)
+    )
+    assert metadata["revoked_at"] is None
+    assert "key_hash" not in metadata
+
+    authorization_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": issued_api_key},
+        json={
+            "agent": "rotated-key-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert authorization_response.status_code == 200
+    assert authorization_response.json()["project_id"] == (
+        project_id
+    )
+
+
+def test_admin_lists_paginated_api_key_metadata():
+    provisioned = provision_test_project()
+    project_id = provisioned["project"]["project_id"]
+
+    additional_response = unauthenticated_client.post(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert additional_response.status_code == 201
+
+    first_page = unauthenticated_client.get(
+        (
+            f"/v1/admin/projects/{project_id}/api-keys"
+            "?limit=1&offset=0"
+        ),
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    second_page = unauthenticated_client.get(
+        (
+            f"/v1/admin/projects/{project_id}/api-keys"
+            "?limit=1&offset=1"
+        ),
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_page.json()["total"] == 2
+    assert second_page.json()["total"] == 2
+    assert len(first_page.json()["items"]) == 1
+    assert len(second_page.json()["items"]) == 1
+
+    listed_items = (
+        first_page.json()["items"]
+        + second_page.json()["items"]
+    )
+
+    expected_fields = {
+        "api_key_id",
+        "project_id",
+        "key_prefix",
+        "created_at",
+        "revoked_at",
+    }
+
+    assert all(
+        set(item) == expected_fields
+        for item in listed_items
+    )
+
+    listed_prefixes = {
+        item["key_prefix"]
+        for item in listed_items
+    }
+
+    assert listed_prefixes == {
+        get_api_key_prefix(provisioned["api_key"]),
+        get_api_key_prefix(
+            additional_response.json()["api_key"]
+        ),
+    }
+
+
+def test_admin_revokes_project_api_key_idempotently():
+    provisioned = provision_test_project()
+    project_id = provisioned["project"]["project_id"]
+    issued_api_key = provisioned["api_key"]
+
+    list_response = unauthenticated_client.get(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    api_key_id = list_response.json()["items"][0][
+        "api_key_id"
+    ]
+
+    path = (
+        f"/v1/admin/projects/{project_id}"
+        f"/api-keys/{api_key_id}"
+    )
+
+    first_response = unauthenticated_client.delete(
+        path,
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    second_response = unauthenticated_client.delete(
+        path,
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.json()["revoked_at"] is not None
+    assert second_response.json()["revoked_at"] == (
+        first_response.json()["revoked_at"]
+    )
+
+    authorization_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": issued_api_key},
+        json={
+            "agent": "revoked-key-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert authorization_response.status_code == 401
+
+
+def test_admin_cannot_revoke_key_from_another_project():
+    first = provision_test_project("First Project")
+    second = provision_test_project("Second Project")
+
+    first_project_id = first["project"]["project_id"]
+    second_project_id = second["project"]["project_id"]
+
+    list_response = unauthenticated_client.get(
+        (
+            f"/v1/admin/projects/{first_project_id}"
+            "/api-keys"
+        ),
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    first_api_key_id = list_response.json()["items"][0][
+        "api_key_id"
+    ]
+
+    response = unauthenticated_client.delete(
+        (
+            f"/v1/admin/projects/{second_project_id}"
+            f"/api-keys/{first_api_key_id}"
+        ),
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == (
+        "api_key_not_found"
+    )
+
+    authorization_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": first["api_key"]},
+        json={
+            "agent": "still-active-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert authorization_response.status_code == 200
+
+
+def test_api_key_lifecycle_rejects_unknown_resources():
+    provisioned = provision_test_project()
+    project_id = provisioned["project"]["project_id"]
+    unknown_project_id = uuid4()
+    unknown_api_key_id = uuid4()
+
+    unknown_project_response = unauthenticated_client.get(
+        (
+            f"/v1/admin/projects/{unknown_project_id}"
+            "/api-keys"
+        ),
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    unknown_key_response = unauthenticated_client.delete(
+        (
+            f"/v1/admin/projects/{project_id}"
+            f"/api-keys/{unknown_api_key_id}"
+        ),
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert unknown_project_response.status_code == 404
+    assert unknown_project_response.json()["detail"]["code"] == (
+        "project_not_found"
+    )
+
+    assert unknown_key_response.status_code == 404
+    assert unknown_key_response.json()["detail"]["code"] == (
+        "api_key_not_found"
+    )
+
+
+def test_disabled_project_cannot_receive_new_api_key(
+    temporary_evidence_store,
+):
+    provisioned = provision_test_project()
+    project_id = provisioned["project"]["project_id"]
+
+    with sqlite3.connect(
+        temporary_evidence_store.database_path
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE projects
+            SET status = 'DISABLED'
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        )
+
+    response = unauthenticated_client.post(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == (
+        "project_disabled"
+    )
 
 def test_authorize_replays_same_idempotent_request():
     payload = {
