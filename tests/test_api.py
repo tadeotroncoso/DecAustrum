@@ -488,7 +488,8 @@ def test_require_approval_creates_pending_approval(
     )
 
     approval = temporary_evidence_store.get_approval(
-        authorization.decision_id
+        decision_id=authorization.decision_id,
+        project_id=authorization.project_id,
     )
 
     assert approval is not None
@@ -543,7 +544,8 @@ def test_non_approval_decisions_do_not_create_approval(
     assert authorization.decision == expected_decision
 
     approval = temporary_evidence_store.get_approval(
-        authorization.decision_id
+        decision_id=authorization.decision_id,
+        project_id=authorization.project_id,
     )
 
     assert approval is None

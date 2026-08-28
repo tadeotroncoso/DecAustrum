@@ -325,7 +325,8 @@ def test_save_and_get_pending_approval(tmp_path):
     store.save_approval(approval)
 
     stored_approval = store.get_approval(
-        authorization.decision_id
+        decision_id=authorization.decision_id,
+        project_id=authorization.project_id,
     )
 
     assert stored_approval == approval
@@ -1063,4 +1064,63 @@ def test_decision_queries_are_scoped_to_project(
 
     assert store.count(
         project_id=second_authorization.project_id
+    ) == 1
+
+def test_approval_queries_are_scoped_to_project(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    first_authorization = build_authorization()
+
+    second_authorization = (
+        first_authorization.model_copy(
+            update={
+                "decision_id": uuid4(),
+                "project_id": uuid4(),
+            }
+        )
+    )
+
+    first_approval = ApprovalRecord(
+        decision_id=first_authorization.decision_id,
+        status="PENDING",
+        requested_at=first_authorization.evaluated_at,
+    )
+
+    second_approval = ApprovalRecord(
+        decision_id=second_authorization.decision_id,
+        status="PENDING",
+        requested_at=second_authorization.evaluated_at,
+    )
+
+    store.save_authorization_with_approval(
+        authorization=first_authorization,
+        approval=first_approval,
+    )
+    store.save_authorization_with_approval(
+        authorization=second_authorization,
+        approval=second_approval,
+    )
+
+    assert store.get_approval(
+        decision_id=first_authorization.decision_id,
+        project_id=second_authorization.project_id,
+    ) is None
+
+    assert store.list_approvals(
+        project_id=first_authorization.project_id,
+    ) == [first_approval]
+
+    assert store.list_approvals(
+        project_id=second_authorization.project_id,
+    ) == [second_approval]
+
+    assert store.count_approvals(
+        project_id=first_authorization.project_id,
+    ) == 1
+
+    assert store.count_approvals(
+        project_id=second_authorization.project_id,
     ) == 1

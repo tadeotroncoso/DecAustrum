@@ -393,21 +393,27 @@ def get_authorization_decision(
 @app.get(
     "/v1/approvals",
     response_model=ApprovalRequestPage,
-    dependencies=[Depends(get_authenticated_project)],
 )
 def list_approval_requests(
     status: ApprovalStatus | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ApprovalRequestPage:
     return ApprovalRequestPage(
         items=store.list_approvals(
+            project_id=project.project_id,
             status=status,
             limit=limit,
             offset=offset,
         ),
-        total=store.count_approvals(status=status),
+        total=store.count_approvals(
+            project_id=project.project_id,
+            status=status,
+        ),
         limit=limit,
         offset=offset,
     )
@@ -415,13 +421,18 @@ def list_approval_requests(
 @app.get(
     "/v1/approvals/{decision_id}",
     response_model=ApprovalRecord,
-    dependencies=[Depends(get_authenticated_project)],
 )
 def get_approval_request(
     decision_id: UUID,
+    project: Project = Depends(
+        get_authenticated_project
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ApprovalRecord:
-    approval = store.get_approval(decision_id)
+    approval = store.get_approval(
+        decision_id=decision_id,
+        project_id=project.project_id,
+    )
 
     if approval is None:
         raise HTTPException(

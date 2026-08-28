@@ -484,17 +484,25 @@ class EvidenceStore:
     def get_approval(
         self,
         decision_id: UUID,
+        project_id: UUID,
     ) -> ApprovalRecord | None:
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
 
             row = connection.execute(
                 """
-                SELECT *
+                SELECT approval_requests.*
                 FROM approval_requests
-                WHERE decision_id = ?
+                JOIN authorization_decisions
+                    ON authorization_decisions.decision_id
+                    = approval_requests.decision_id
+                WHERE approval_requests.decision_id = ?
+                AND authorization_decisions.project_id = ?
                 """,
-                (str(decision_id),),
+                (
+                    str(decision_id),
+                    str(project_id),
+                ),
             ).fetchone()
 
         if row is None:
@@ -605,6 +613,7 @@ class EvidenceStore:
 
     def list_approvals(
         self,
+        project_id: UUID,
         status: ApprovalStatus | None = None,
         limit: int = 20,
         offset: int = 0,
@@ -615,23 +624,44 @@ class EvidenceStore:
             if status is None:
                 rows = connection.execute(
                     """
-                    SELECT *
+                    SELECT approval_requests.*
                     FROM approval_requests
-                    ORDER BY requested_at DESC, decision_id DESC
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    ORDER BY
+                        approval_requests.requested_at DESC,
+                        approval_requests.decision_id DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (limit, offset),
+                    (
+                        str(project_id),
+                        limit,
+                        offset,
+                    ),
                 ).fetchall()
             else:
                 rows = connection.execute(
                     """
-                    SELECT *
+                    SELECT approval_requests.*
                     FROM approval_requests
-                    WHERE status = ?
-                    ORDER BY requested_at DESC, decision_id DESC
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    AND approval_requests.status = ?
+                    ORDER BY
+                        approval_requests.requested_at DESC,
+                        approval_requests.decision_id DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (status, limit, offset),
+                    (
+                        str(project_id),
+                        status,
+                        limit,
+                        offset,
+                    ),
                 ).fetchall()
 
         return [
@@ -642,6 +672,7 @@ class EvidenceStore:
 
     def count_approvals(
         self,
+        project_id: UUID,
         status: ApprovalStatus | None = None,
     ) -> int:
         with self._connect() as connection:
@@ -650,16 +681,28 @@ class EvidenceStore:
                     """
                     SELECT COUNT(*)
                     FROM approval_requests
-                    """
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    """,
+                    (str(project_id),),
                 ).fetchone()
             else:
                 row = connection.execute(
                     """
                     SELECT COUNT(*)
                     FROM approval_requests
-                    WHERE status = ?
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    AND approval_requests.status = ?
                     """,
-                    (status,),
+                    (
+                        str(project_id),
+                        status,
+                    ),
                 ).fetchone()
 
         return int(row[0])
