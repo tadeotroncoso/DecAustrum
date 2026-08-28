@@ -15,7 +15,7 @@ from app.exceptions import (
     ApprovalAlreadyResolvedError,
     ApprovalNotFoundError,
 )
-
+from app.project_models import Project
 
 CREATE_DECISIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS authorization_decisions (
@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
 )
 """
 
+CREATE_PROJECTS_TABLE = """
+CREATE TABLE IF NOT EXISTS projects (
+    project_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN ('ACTIVE', 'DISABLED')
+    ),
+    created_at TEXT NOT NULL
+)
+"""
 
 class EvidenceStore:
     def __init__(
@@ -101,11 +111,66 @@ class EvidenceStore:
         )
 
         with self._connect() as connection:
+            connection.execute(CREATE_PROJECTS_TABLE)
             connection.execute(CREATE_DECISIONS_TABLE)
             self._migrate_decisions_table(connection)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
-            connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
             connection.execute(CREATE_IDEMPOTENCY_RECORDS_TABLE)
+
+    def save_project(
+        self,
+        project: Project,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO projects (
+                    project_id,
+                    name,
+                    status,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(project.project_id),
+                    project.name,
+                    project.status,
+                    project.created_at.isoformat(),
+                ),
+            )
+
+    def get_project(
+        self,
+        project_id: UUID,
+    ) -> Project | None:
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT
+                    project_id,
+                    name,
+                    status,
+                    created_at
+                FROM projects
+                WHERE project_id = ?
+                """,
+                (str(project_id),),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return Project.model_validate(
+            {
+                "project_id": row["project_id"],
+                "name": row["name"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
+        )
 
     def _insert_authorization(
         self,

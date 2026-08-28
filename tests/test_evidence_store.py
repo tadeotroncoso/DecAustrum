@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from app.project_models import Project
 
 import pytest
 from app.idempotency import IdempotencyRecord
@@ -70,6 +71,20 @@ def build_authorization() -> AuthorizationResponse:
         },
     )
 
+def build_project() -> Project:
+    return Project(
+        project_id=uuid4(),
+        name="Acme Production",
+        status="ACTIVE",
+        created_at=datetime(
+            2026,
+            8,
+            28,
+            10,
+            0,
+            tzinfo=timezone.utc,
+        ),
+    )
 
 def test_initialize_creates_decisions_table(tmp_path):
     database_path = tmp_path / "test.db"
@@ -587,3 +602,111 @@ def test_get_idempotency_record_returns_none_for_unknown_key(
     )
 
     assert loaded_record is None
+
+def test_initialize_creates_projects_table(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        columns = connection.execute(
+            "PRAGMA table_info(projects)"
+        ).fetchall()
+
+    column_names = {
+        column[1]
+        for column in columns
+    }
+
+    assert column_names == {
+        "project_id",
+        "name",
+        "status",
+        "created_at",
+    }
+
+
+def test_projects_table_rejects_invalid_status(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO projects (
+                    project_id,
+                    name,
+                    status,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    "Invalid Project",
+                    "UNKNOWN",
+                    "2026-08-28T10:00:00+00:00",
+                ),
+            )
+
+
+def test_save_project_persists_project(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+
+    store.save_project(project)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+
+        row = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE project_id = ?
+            """,
+            (str(project.project_id),),
+        ).fetchone()
+
+    assert row is not None
+    assert row["project_id"] == str(project.project_id)
+    assert row["name"] == "Acme Production"
+    assert row["status"] == "ACTIVE"
+    assert row["created_at"] == (
+        project.created_at.isoformat()
+    )
+
+
+def test_get_project_returns_saved_project(tmp_path):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    project = build_project()
+    store.save_project(project)
+
+    loaded_project = store.get_project(
+        project.project_id
+    )
+
+    assert loaded_project == project
+
+
+def test_get_project_returns_none_when_unknown(
+    tmp_path,
+):
+    database_path = tmp_path / "test.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    loaded_project = store.get_project(uuid4())
+
+    assert loaded_project is None
