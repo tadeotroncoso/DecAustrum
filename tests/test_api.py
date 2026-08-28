@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 TEST_API_KEY = "test-api-key"
+TEST_ADMIN_API_KEY = "test-admin-api-key"
 
 client = TestClient(
     app,
@@ -35,6 +36,10 @@ def temporary_evidence_store(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "REGTRACE_API_KEY",
         TEST_API_KEY,
+    )
+    monkeypatch.setenv(
+        "REGTRACE_ADMIN_API_KEY",
+        TEST_ADMIN_API_KEY,
     )
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
@@ -836,7 +841,19 @@ def test_openapi_defines_api_key_security_scheme():
     assert security_scheme["name"] == "X-API-Key"
 
 
-def test_all_v1_endpoints_require_api_key_in_openapi():
+def test_openapi_defines_admin_api_key_security_scheme():
+    schema = app.openapi()
+
+    security_scheme = schema["components"]["securitySchemes"][
+        "RegTraceAdminApiKey"
+    ]
+
+    assert security_scheme["type"] == "apiKey"
+    assert security_scheme["in"] == "header"
+    assert security_scheme["name"] == "X-Admin-API-Key"
+
+
+def test_all_v1_endpoints_require_expected_api_key_in_openapi():
     schema = app.openapi()
 
     http_methods = {
@@ -857,10 +874,120 @@ def test_all_v1_endpoints_require_api_key_in_openapi():
             if operation is None:
                 continue
 
-            assert {"RegTraceApiKey": []} in operation.get(
+            expected_scheme = (
+                "RegTraceAdminApiKey"
+                if path.startswith("/v1/admin/")
+                else "RegTraceApiKey"
+            )
+
+            assert {expected_scheme: []} in operation.get(
                 "security",
                 [],
             ), f"{method.upper()} {path} is not protected"
+
+
+def test_project_api_key_cannot_provision_project():
+    response = client.post(
+        "/v1/admin/projects",
+        json={"name": "Unauthorized Project"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == {
+        "code": "invalid_admin_api_key",
+        "message": (
+            "A valid admin API key is required."
+        ),
+    }
+
+
+def test_invalid_admin_api_key_cannot_provision_project():
+    response = unauthenticated_client.post(
+        "/v1/admin/projects",
+        headers={"X-Admin-API-Key": "wrong-key"},
+        json={"name": "Unauthorized Project"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_admin_can_provision_project(
+    temporary_evidence_store,
+):
+    response = unauthenticated_client.post(
+        "/v1/admin/projects",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+        json={"name": "  Acme Production  "},
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    project_data = data["project"]
+    issued_api_key = data["api_key"]
+    project_id = UUID(project_data["project_id"])
+
+    assert project_data["name"] == "Acme Production"
+    assert project_data["status"] == "ACTIVE"
+    assert issued_api_key.startswith("rtk_")
+
+    stored_project = temporary_evidence_store.get_project(
+        project_id
+    )
+
+    assert stored_project is not None
+    assert stored_project.name == "Acme Production"
+
+    with sqlite3.connect(
+        temporary_evidence_store.database_path
+    ) as connection:
+        connection.row_factory = sqlite3.Row
+        stored_key = connection.execute(
+            """
+            SELECT key_prefix, key_hash
+            FROM project_api_keys
+            WHERE project_id = ?
+            """,
+            (str(project_id),),
+        ).fetchone()
+
+    assert stored_key is not None
+    assert stored_key["key_prefix"] == (
+        get_api_key_prefix(issued_api_key)
+    )
+    assert stored_key["key_hash"] == (
+        hash_api_key(issued_api_key)
+    )
+    assert stored_key["key_hash"] != issued_api_key
+
+    authorization_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": issued_api_key},
+        json={
+            "agent": "provisioned-agent",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert authorization_response.status_code == 200
+    assert authorization_response.json()["project_id"] == (
+        str(project_id)
+    )
+
+
+def test_project_provisioning_rejects_blank_name():
+    response = unauthenticated_client.post(
+        "/v1/admin/projects",
+        headers={
+            "X-Admin-API-Key": TEST_ADMIN_API_KEY,
+        },
+        json={"name": "   "},
+    )
+
+    assert response.status_code == 422
 
 def test_authorize_replays_same_idempotent_request():
     payload = {

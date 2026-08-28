@@ -12,6 +12,12 @@ from fastapi import (
     HTTPException,
     Query,
 )
+from app.api_keys import (
+    ProjectApiKeyRecord,
+    generate_project_api_key,
+    get_api_key_prefix,
+    hash_api_key,
+)
 from app.bootstrap import bootstrap_default_project
 
 from app.idempotency import (
@@ -44,15 +50,22 @@ from app.policy_engine import (
 )
 
 from app.security import (
+    admin_api_key_header,
     api_key_header,
+    authenticate_admin,
     authenticate_project,
+    get_configured_admin_api_key,
     get_configured_api_key,
 )
 
 from app.policy_loader import load_policies
 from app.policy_models import Policy, PolicyPage
 
-from app.project_models import Project
+from app.project_models import (
+    Project,
+    ProjectCreateRequest,
+    ProjectProvisioningResponse,
+)
 
 DATABASE_PATH = Path("data/regtrace.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
@@ -92,6 +105,20 @@ def get_authenticated_project(
     return authenticate_project(
         provided_api_key=provided_api_key,
         store=store,
+    )
+
+
+def require_admin_access(
+    provided_api_key: Annotated[
+        str | None,
+        Depends(admin_api_key_header),
+    ],
+) -> None:
+    authenticate_admin(
+        provided_api_key=provided_api_key,
+        configured_api_key=(
+            get_configured_admin_api_key()
+        ),
     )
 
 def get_active_policies() -> list[Policy]:
@@ -177,6 +204,46 @@ def _resolve_approval_request(
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.post(
+    "/v1/admin/projects",
+    response_model=ProjectProvisioningResponse,
+    status_code=201,
+    dependencies=[Depends(require_admin_access)],
+)
+def provision_project(
+    request: ProjectCreateRequest,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectProvisioningResponse:
+    created_at = datetime.now(timezone.utc)
+
+    project = Project(
+        project_id=uuid4(),
+        name=request.name,
+        status="ACTIVE",
+        created_at=created_at,
+    )
+
+    api_key = generate_project_api_key()
+
+    api_key_record = ProjectApiKeyRecord(
+        api_key_id=uuid4(),
+        project_id=project.project_id,
+        key_prefix=get_api_key_prefix(api_key),
+        key_hash=hash_api_key(api_key),
+        created_at=created_at,
+    )
+
+    store.save_project_with_api_key(
+        project=project,
+        api_key=api_key_record,
+    )
+
+    return ProjectProvisioningResponse(
+        project=project,
+        api_key=api_key,
+    )
 
 @app.get(
     "/v1/policies",

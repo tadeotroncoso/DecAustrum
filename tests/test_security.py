@@ -8,7 +8,10 @@ from fastapi import HTTPException
 from app.api_keys import hash_api_key
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
-from app.security import authenticate_project
+from app.security import (
+    authenticate_admin,
+    authenticate_project,
+)
 
 
 def build_project() -> Project:
@@ -75,4 +78,35 @@ def test_authenticate_project_rejects_unknown_key():
     assert exc_info.value.detail == {
         "code": "invalid_api_key",
         "message": "A valid API key is required.",
+    }
+
+
+def test_authenticate_admin_accepts_matching_key():
+    result = authenticate_admin(
+        provided_api_key="admin-secret",
+        configured_api_key="admin-secret",
+    )
+
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    "provided_api_key",
+    [None, "wrong-secret"],
+)
+def test_authenticate_admin_rejects_invalid_key(
+    provided_api_key,
+):
+    with pytest.raises(HTTPException) as exc_info:
+        authenticate_admin(
+            provided_api_key=provided_api_key,
+            configured_api_key="admin-secret",
+        )
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == {
+        "code": "invalid_admin_api_key",
+        "message": (
+            "A valid admin API key is required."
+        ),
     }

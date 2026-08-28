@@ -31,3 +31,12 @@ class Project(BaseModel):
     name: ProjectName
     status: ProjectStatus = "ACTIVE"
     created_at: datetime
+
+
+class ProjectCreateRequest(BaseModel):
+    name: ProjectName
+
+
+class ProjectProvisioningResponse(BaseModel):
+    project: Project
+    api_key: str

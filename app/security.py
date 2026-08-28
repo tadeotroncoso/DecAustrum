@@ -1,4 +1,5 @@
 import os
+import secrets
 
 from fastapi import HTTPException
 from fastapi.security import APIKeyHeader
@@ -9,11 +10,24 @@ from app.project_models import Project
 
 
 API_KEY_ENVIRONMENT_VARIABLE = "REGTRACE_API_KEY"
+ADMIN_API_KEY_ENVIRONMENT_VARIABLE = (
+    "REGTRACE_ADMIN_API_KEY"
+)
 
 api_key_header = APIKeyHeader(
     name="X-API-Key",
     scheme_name="RegTraceApiKey",
     description="API key required to access RegTrace v1 endpoints.",
+    auto_error=False,
+)
+
+admin_api_key_header = APIKeyHeader(
+    name="X-Admin-API-Key",
+    scheme_name="RegTraceAdminApiKey",
+    description=(
+        "Administrative API key required to provision "
+        "RegTrace projects."
+    ),
     auto_error=False,
 )
 
@@ -27,6 +41,42 @@ def get_configured_api_key() -> str:
         )
 
     return api_key
+
+
+def get_configured_admin_api_key() -> str:
+    api_key = os.getenv(
+        ADMIN_API_KEY_ENVIRONMENT_VARIABLE
+    )
+
+    if not api_key:
+        raise RuntimeError(
+            f"{ADMIN_API_KEY_ENVIRONMENT_VARIABLE} "
+            "must be configured."
+        )
+
+    return api_key
+
+
+def authenticate_admin(
+    provided_api_key: str | None,
+    configured_api_key: str,
+) -> None:
+    if (
+        not provided_api_key
+        or not secrets.compare_digest(
+            provided_api_key,
+            configured_api_key,
+        )
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "invalid_admin_api_key",
+                "message": (
+                    "A valid admin API key is required."
+                ),
+            },
+        )
 
 def authenticate_project(
     provided_api_key: str | None,
