@@ -38,3 +38,11 @@ class InvalidPolicyContextError(Exception):
             f"Context field '{field}' is incompatible "
             f"with operator '{operator}'."
         )
+
+class DuplicatePolicyIdError(Exception):
+    def __init__(self, policy_id: str) -> None:
+        self.policy_id = policy_id
+
+        super().__init__(
+            f"Policy id '{policy_id}' is defined more than once."
+        )

@@ -37,12 +37,18 @@ from app.exceptions import (
     ApprovalNotFoundError,
     InvalidPolicyContextError,
 )
-from app.policy_engine import evaluate_policy
+from app.policy_engine import (
+    POLICIES_DIRECTORY,
+    evaluate_policy,
+)
 
 from app.security import (
     get_configured_api_key,
     require_api_key,
 )
+
+from app.policy_loader import load_policies
+from app.policy_models import Policy, PolicyPage
 
 DATABASE_PATH = Path("data/regtrace.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
@@ -50,6 +56,7 @@ evidence_store = EvidenceStore(DATABASE_PATH)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     get_configured_api_key()
+    load_policies(POLICIES_DIRECTORY)
     evidence_store.initialize()
     yield
 
@@ -63,6 +70,9 @@ app = FastAPI(
 
 def get_evidence_store() -> EvidenceStore:
     return evidence_store
+
+def get_active_policies() -> list[Policy]:
+    return load_policies(POLICIES_DIRECTORY)
 
 def _get_idempotent_authorization(
     store: EvidenceStore,
@@ -139,6 +149,43 @@ def _resolve_approval_request(
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+@app.get(
+    "/v1/policies",
+    response_model=PolicyPage,
+    dependencies=[Depends(require_api_key)],
+)
+def list_active_policies(
+    policies: list[Policy] = Depends(get_active_policies),
+) -> PolicyPage:
+    return PolicyPage(
+        items=policies,
+        total=len(policies),
+    )
+
+
+@app.get(
+    "/v1/policies/{policy_id}",
+    response_model=Policy,
+    dependencies=[Depends(require_api_key)],
+)
+def get_active_policy(
+    policy_id: str,
+    policies: list[Policy] = Depends(get_active_policies),
+) -> Policy:
+    for policy in policies:
+        if policy.id == policy_id:
+            return policy
+
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "code": "policy_not_found",
+            "message": (
+                f"Policy '{policy_id}' was not found."
+            ),
+        },
+    )
 
 
 @app.post(

@@ -978,3 +978,53 @@ def test_authorize_recovers_from_idempotency_race(
 
     assert decisions_response.json()["total"] == 1
     assert approvals_response.json()["total"] == 1
+
+
+def test_list_policies_returns_active_catalog():
+    response = client.get("/v1/policies")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total"] == len(data["items"])
+
+    policy_ids = {
+        policy["id"]
+        for policy in data["items"]
+    }
+
+    assert "refund-limit" in policy_ids
+    assert "large-transfer" in policy_ids
+    assert "unverified-account" in policy_ids
+
+
+def test_get_policy_returns_active_policy():
+    response = client.get(
+        "/v1/policies/refund-limit"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["id"] == "refund-limit"
+    assert data["action"] == "refund_payment"
+    assert data["decision"] == "REQUIRE_APPROVAL"
+    assert data["version"] == 1
+    assert data["match"] == "all"
+    assert len(data["conditions"]) >= 1
+
+
+def test_get_policy_returns_404_when_not_found():
+    response = client.get(
+        "/v1/policies/missing-policy"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "policy_not_found",
+        "message": (
+            "Policy 'missing-policy' was not found."
+        ),
+    }

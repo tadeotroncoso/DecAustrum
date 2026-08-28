@@ -23,3 +23,8 @@ class Policy(BaseModel):
     conditions: list[PolicyCondition] = Field(min_length=1)
     decision: Decision
     reason: str
+
+
+class PolicyPage(BaseModel):
+    items: list[Policy]
+    total: int
