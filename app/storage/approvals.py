@@ -1,0 +1,272 @@
+import sqlite3
+from datetime import datetime
+from uuid import UUID
+
+from app.approval_models import (
+    ApprovalRecord,
+    ApprovalResolutionStatus,
+    ApprovalStatus,
+)
+from app.exceptions import (
+    ApprovalAlreadyResolvedError,
+    ApprovalNotFoundError,
+)
+from app.storage.database import SQLiteDatabase
+
+
+class ApprovalRepository:
+    def __init__(self, database: SQLiteDatabase) -> None:
+        self.database = database
+
+    @staticmethod
+    def _row_to_approval(
+        row: sqlite3.Row,
+    ) -> ApprovalRecord:
+        return ApprovalRecord.model_validate(
+            {
+                "decision_id": row["decision_id"],
+                "status": row["status"],
+                "requested_at": row["requested_at"],
+                "resolved_at": row["resolved_at"],
+                "resolved_by": row["resolved_by"],
+            }
+        )
+
+    @staticmethod
+    def insert(
+        connection: sqlite3.Connection,
+        approval: ApprovalRecord,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO approval_requests (
+                decision_id,
+                status,
+                requested_at,
+                resolved_at,
+                resolved_by
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                str(approval.decision_id),
+                approval.status,
+                approval.requested_at.isoformat(),
+                (
+                    approval.resolved_at.isoformat()
+                    if approval.resolved_at is not None
+                    else None
+                ),
+                approval.resolved_by,
+            ),
+        )
+
+    def save(self, approval: ApprovalRecord) -> None:
+        with self.database.connect() as connection:
+            self.insert(connection, approval)
+
+    def get(
+        self,
+        decision_id: UUID,
+        project_id: UUID,
+    ) -> ApprovalRecord | None:
+        with self.database.connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            row = connection.execute(
+                """
+                SELECT approval_requests.*
+                FROM approval_requests
+                JOIN authorization_decisions
+                    ON authorization_decisions.decision_id
+                    = approval_requests.decision_id
+                WHERE approval_requests.decision_id = ?
+                AND authorization_decisions.project_id = ?
+                """,
+                (
+                    str(decision_id),
+                    str(project_id),
+                ),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_approval(row)
+
+    def resolve(
+        self,
+        decision_id: UUID,
+        project_id: UUID,
+        status: ApprovalResolutionStatus,
+        resolved_by: str,
+        resolved_at: datetime,
+    ) -> ApprovalRecord:
+        with self.database.connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            result = connection.execute(
+                """
+                UPDATE approval_requests
+                SET
+                    status = ?,
+                    resolved_at = ?,
+                    resolved_by = ?
+                WHERE decision_id = ?
+                AND status = 'PENDING'
+                AND EXISTS (
+                    SELECT 1
+                    FROM authorization_decisions
+                    WHERE authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    AND authorization_decisions.project_id = ?
+                )
+                """,
+                (
+                    status,
+                    resolved_at.isoformat(),
+                    resolved_by,
+                    str(decision_id),
+                    str(project_id),
+                ),
+            )
+
+            if result.rowcount == 0:
+                row = connection.execute(
+                    """
+                    SELECT approval_requests.*
+                    FROM approval_requests
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE approval_requests.decision_id = ?
+                    AND authorization_decisions.project_id = ?
+                    """,
+                    (
+                        str(decision_id),
+                        str(project_id),
+                    ),
+                ).fetchone()
+
+                if row is None:
+                    raise ApprovalNotFoundError(decision_id)
+
+                current_approval = self._row_to_approval(row)
+
+                raise ApprovalAlreadyResolvedError(
+                    decision_id=decision_id,
+                    current_status=current_approval.status,
+                )
+
+            row = connection.execute(
+                """
+                SELECT approval_requests.*
+                FROM approval_requests
+                JOIN authorization_decisions
+                    ON authorization_decisions.decision_id
+                    = approval_requests.decision_id
+                WHERE approval_requests.decision_id = ?
+                AND authorization_decisions.project_id = ?
+                """,
+                (
+                    str(decision_id),
+                    str(project_id),
+                ),
+            ).fetchone()
+
+        return self._row_to_approval(row)
+
+    def list(
+        self,
+        project_id: UUID,
+        status: ApprovalStatus | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[ApprovalRecord]:
+        with self.database.connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            if status is None:
+                rows = connection.execute(
+                    """
+                    SELECT approval_requests.*
+                    FROM approval_requests
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    ORDER BY
+                        approval_requests.requested_at DESC,
+                        approval_requests.decision_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (
+                        str(project_id),
+                        limit,
+                        offset,
+                    ),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT approval_requests.*
+                    FROM approval_requests
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    AND approval_requests.status = ?
+                    ORDER BY
+                        approval_requests.requested_at DESC,
+                        approval_requests.decision_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (
+                        str(project_id),
+                        status,
+                        limit,
+                        offset,
+                    ),
+                ).fetchall()
+
+        return [
+            self._row_to_approval(row)
+            for row in rows
+        ]
+
+    def count(
+        self,
+        project_id: UUID,
+        status: ApprovalStatus | None = None,
+    ) -> int:
+        with self.database.connect() as connection:
+            if status is None:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM approval_requests
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    """,
+                    (str(project_id),),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM approval_requests
+                    JOIN authorization_decisions
+                        ON authorization_decisions.decision_id
+                        = approval_requests.decision_id
+                    WHERE authorization_decisions.project_id = ?
+                    AND approval_requests.status = ?
+                    """,
+                    (
+                        str(project_id),
+                        status,
+                    ),
+                ).fetchone()
+
+        return int(row[0])
