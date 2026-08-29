@@ -40,3 +40,11 @@ ResolverIdentifier = Annotated[
 
 class ApprovalResolutionRequest(BaseModel):
     resolved_by: ResolverIdentifier
+    reason: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=500,
+        ),
+    ] | None = None

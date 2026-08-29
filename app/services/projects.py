@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 
+from app.audit_models import AuditContext
 from app.api_keys import (
     ProjectApiKeyMetadata,
     ProjectApiKeyProvisioningResponse,
@@ -46,6 +47,7 @@ def create_project(
     request: ProjectCreateRequest,
     policy_templates: list[Policy],
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> ProjectProvisioningResponse:
     created_at = datetime.now(timezone.utc)
 
@@ -71,6 +73,7 @@ def create_project(
         project=project,
         api_key=api_key_record,
         policies=policy_templates,
+        audit_context=audit_context,
     )
 
     return ProjectProvisioningResponse(
@@ -82,6 +85,7 @@ def create_project(
 def create_project_api_key(
     project_id: UUID,
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> ProjectApiKeyProvisioningResponse:
     project = get_project_or_404(
         project_id=project_id,
@@ -110,7 +114,10 @@ def create_project_api_key(
         created_at=created_at,
     )
 
-    store.save_project_api_key(record)
+    store.save_project_api_key(
+        record,
+        audit_context=audit_context,
+    )
 
     metadata = ProjectApiKeyMetadata(
         api_key_id=record.api_key_id,
@@ -130,6 +137,7 @@ def change_project_status(
     project_id: UUID,
     status: ProjectStatus,
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> Project:
     if (
         project_id == DEFAULT_PROJECT_ID
@@ -149,6 +157,7 @@ def change_project_status(
         project_id=project_id,
         status=status,
         updated_at=datetime.now(timezone.utc),
+        audit_context=audit_context,
     )
 
     if project is None:
@@ -169,6 +178,7 @@ def revoke_api_key(
     project_id: UUID,
     api_key_id: UUID,
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> ProjectApiKeyMetadata:
     get_project_or_404(
         project_id=project_id,
@@ -179,6 +189,7 @@ def revoke_api_key(
         project_id=project_id,
         api_key_id=api_key_id,
         revoked_at=datetime.now(timezone.utc),
+        audit_context=audit_context,
     )
 
     if revoked_key is None:

@@ -6,6 +6,14 @@ from app.api_keys import (
     ProjectApiKeyMetadata,
     ProjectApiKeyRecord,
 )
+from app.audit import build_audit_event
+from app.audit_models import (
+    AdministrativeAuditEvent,
+    AuditAction,
+    AuditActorType,
+    AuditContext,
+    AuditResourceType,
+)
 from app.approval_models import (
     ApprovalRecord,
     ApprovalResolutionStatus,
@@ -24,6 +32,7 @@ from app.policy_models import (
 )
 from app.project_models import Project, ProjectStatus
 from app.storage.api_keys import ProjectApiKeyRepository
+from app.storage.audit import AdministrativeAuditRepository
 from app.storage.approvals import ApprovalRepository
 from app.storage.database import SQLiteDatabase
 from app.storage.decisions import (
@@ -42,6 +51,7 @@ class EvidenceStore:
         self.database = SQLiteDatabase(database_path)
         self.projects = ProjectRepository(self.database)
         self.api_keys = ProjectApiKeyRepository(self.database)
+        self.audit = AdministrativeAuditRepository(self.database)
         self.policies = ProjectPolicyRepository(self.database)
         self.decisions = AuthorizationDecisionRepository(
             self.database
@@ -59,6 +69,62 @@ class EvidenceStore:
     def initialize(self) -> None:
         self.database.initialize()
         self.integrity.backfill_existing_decisions()
+
+    def get_administrative_audit_event(
+        self,
+        event_id: UUID,
+    ) -> AdministrativeAuditEvent | None:
+        return self.audit.get(event_id)
+
+    def list_administrative_audit_events(
+        self,
+        *,
+        project_id: UUID | None = None,
+        action: AuditAction | None = None,
+        resource_type: AuditResourceType | None = None,
+        resource_id: str | None = None,
+        actor_type: AuditActorType | None = None,
+        actor_id: str | None = None,
+        occurred_after: datetime | None = None,
+        occurred_before: datetime | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[AdministrativeAuditEvent]:
+        return self.audit.list(
+            project_id=project_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            occurred_after=occurred_after,
+            occurred_before=occurred_before,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_administrative_audit_events(
+        self,
+        *,
+        project_id: UUID | None = None,
+        action: AuditAction | None = None,
+        resource_type: AuditResourceType | None = None,
+        resource_id: str | None = None,
+        actor_type: AuditActorType | None = None,
+        actor_id: str | None = None,
+        occurred_after: datetime | None = None,
+        occurred_before: datetime | None = None,
+    ) -> int:
+        return self.audit.count(
+            project_id=project_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            occurred_after=occurred_after,
+            occurred_before=occurred_before,
+        )
 
     def save_project(self, project: Project) -> None:
         self.projects.save(project)
@@ -92,12 +158,41 @@ class EvidenceStore:
         project_id: UUID,
         status: ProjectStatus,
         updated_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> Project | None:
-        return self.projects.update_status(
-            project_id=project_id,
-            status=status,
-            updated_at=updated_at,
-        )
+        with self.database.connect() as connection:
+            previous = self.projects.get_with_connection(
+                connection=connection,
+                project_id=project_id,
+            )
+            updated = self.projects.update_status_with_connection(
+                connection=connection,
+                project_id=project_id,
+                status=status,
+                updated_at=updated_at,
+            )
+
+            if (
+                audit_context is not None
+                and previous is not None
+                and updated is not None
+                and previous.status != updated.status
+            ):
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=updated_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action="PROJECT_STATUS_CHANGED",
+                        resource_type="PROJECT",
+                        resource_id=str(project_id),
+                        before=previous,
+                        after=updated,
+                    ),
+                )
+
+            return updated
 
     def save(
         self,
@@ -209,14 +304,40 @@ class EvidenceStore:
         status: ApprovalResolutionStatus,
         resolved_by: str,
         resolved_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> ApprovalRecord:
-        return self.approvals.resolve(
-            decision_id=decision_id,
-            project_id=project_id,
-            status=status,
-            resolved_by=resolved_by,
-            resolved_at=resolved_at,
-        )
+        with self.database.connect() as connection:
+            previous = self.approvals.get_with_connection(
+                connection=connection,
+                decision_id=decision_id,
+                project_id=project_id,
+            )
+            resolved = self.approvals.resolve_with_connection(
+                connection=connection,
+                decision_id=decision_id,
+                project_id=project_id,
+                status=status,
+                resolved_by=resolved_by,
+                resolved_at=resolved_at,
+            )
+
+            if audit_context is not None:
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=resolved_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action="APPROVAL_RESOLVED",
+                        resource_type="APPROVAL",
+                        resource_id=str(decision_id),
+                        before=previous,
+                        after=resolved,
+                        metadata={"resolution": status},
+                    ),
+                )
+
+            return resolved
 
     def list_approvals(
         self,
@@ -304,6 +425,7 @@ class EvidenceStore:
         project: Project,
         api_key: ProjectApiKeyRecord,
         policies: list[Policy] | None = None,
+        audit_context: AuditContext | None = None,
     ) -> None:
         if api_key.project_id != project.project_id:
             raise ValueError(
@@ -323,11 +445,91 @@ class EvidenceStore:
                     updated_at=project.created_at,
                 )
 
+            if audit_context is not None:
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=project.created_at,
+                        project_id=project.project_id,
+                        context=audit_context,
+                        action="PROJECT_CREATED",
+                        resource_type="PROJECT",
+                        resource_id=str(project.project_id),
+                        after=project,
+                        metadata={
+                            "seeded_policy_count": len(
+                                policies or []
+                            ),
+                        },
+                    ),
+                )
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=api_key.created_at,
+                        project_id=project.project_id,
+                        context=audit_context,
+                        action="API_KEY_CREATED",
+                        resource_type="API_KEY",
+                        resource_id=str(api_key.api_key_id),
+                        after=ProjectApiKeyMetadata(
+                            api_key_id=api_key.api_key_id,
+                            project_id=api_key.project_id,
+                            key_prefix=api_key.key_prefix,
+                            created_at=api_key.created_at,
+                            revoked_at=api_key.revoked_at,
+                        ),
+                    ),
+                )
+
+                for policy in policies or []:
+                    configuration = ProjectPolicyConfiguration(
+                        project_id=project.project_id,
+                        policy=policy,
+                        enabled=True,
+                        updated_at=project.created_at,
+                    )
+                    self.audit.insert(
+                        connection,
+                        build_audit_event(
+                            occurred_at=project.created_at,
+                            project_id=project.project_id,
+                            context=audit_context,
+                            action="POLICY_CREATED",
+                            resource_type="POLICY",
+                            resource_id=policy.id,
+                            after=configuration,
+                            metadata={"source": "template"},
+                        ),
+                    )
+
     def save_project_api_key(
         self,
         api_key: ProjectApiKeyRecord,
+        audit_context: AuditContext | None = None,
     ) -> None:
-        self.api_keys.save(api_key)
+        with self.database.connect() as connection:
+            self.api_keys.insert(connection, api_key)
+
+            if audit_context is not None:
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=api_key.created_at,
+                        project_id=api_key.project_id,
+                        context=audit_context,
+                        action="API_KEY_CREATED",
+                        resource_type="API_KEY",
+                        resource_id=str(api_key.api_key_id),
+                        after=ProjectApiKeyMetadata(
+                            api_key_id=api_key.api_key_id,
+                            project_id=api_key.project_id,
+                            key_prefix=api_key.key_prefix,
+                            created_at=api_key.created_at,
+                            revoked_at=api_key.revoked_at,
+                        ),
+                    ),
+                )
 
     def list_project_api_keys(
         self,
@@ -352,12 +554,42 @@ class EvidenceStore:
         project_id: UUID,
         api_key_id: UUID,
         revoked_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> ProjectApiKeyMetadata | None:
-        return self.api_keys.revoke(
-            project_id=project_id,
-            api_key_id=api_key_id,
-            revoked_at=revoked_at,
-        )
+        with self.database.connect() as connection:
+            previous = self.api_keys.get_metadata_with_connection(
+                connection=connection,
+                project_id=project_id,
+                api_key_id=api_key_id,
+            )
+            revoked = self.api_keys.revoke_with_connection(
+                connection=connection,
+                project_id=project_id,
+                api_key_id=api_key_id,
+                revoked_at=revoked_at,
+            )
+
+            if (
+                audit_context is not None
+                and previous is not None
+                and previous.revoked_at is None
+                and revoked is not None
+            ):
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=revoked_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action="API_KEY_REVOKED",
+                        resource_type="API_KEY",
+                        resource_id=str(api_key_id),
+                        before=previous,
+                        after=revoked,
+                    ),
+                )
+
+            return revoked
 
     def get_active_project_by_api_key_hash(
         self,
@@ -372,12 +604,50 @@ class EvidenceStore:
         project_id: UUID,
         policies: list[Policy],
         seeded_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> None:
-        self.policies.seed(
-            project_id=project_id,
-            policies=policies,
-            seeded_at=seeded_at,
-        )
+        with self.database.connect() as connection:
+            for policy in policies:
+                previous = (
+                    self.policies
+                    .get_configuration_with_connection(
+                        connection=connection,
+                        project_id=project_id,
+                        policy_id=policy.id,
+                    )
+                )
+                self.policies.insert_seed(
+                    connection=connection,
+                    project_id=project_id,
+                    policy=policy,
+                    updated_at=seeded_at,
+                )
+
+                if (
+                    audit_context is not None
+                    and previous is None
+                ):
+                    created = (
+                        self.policies
+                        .get_configuration_with_connection(
+                            connection=connection,
+                            project_id=project_id,
+                            policy_id=policy.id,
+                        )
+                    )
+                    self.audit.insert(
+                        connection,
+                        build_audit_event(
+                            occurred_at=seeded_at,
+                            project_id=project_id,
+                            context=audit_context,
+                            action="POLICY_CREATED",
+                            resource_type="POLICY",
+                            resource_id=policy.id,
+                            after=created,
+                            metadata={"source": "template"},
+                        ),
+                    )
 
     def list_project_policy_configurations(
         self,
@@ -416,12 +686,52 @@ class EvidenceStore:
         project_id: UUID,
         policy: Policy,
         updated_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> ProjectPolicyConfiguration:
-        return self.policies.save(
-            project_id=project_id,
-            policy=policy,
-            updated_at=updated_at,
-        )
+        with self.database.connect() as connection:
+            previous = (
+                self.policies.get_configuration_with_connection(
+                    connection=connection,
+                    project_id=project_id,
+                    policy_id=policy.id,
+                )
+            )
+            saved = self.policies.save_with_connection(
+                connection=connection,
+                project_id=project_id,
+                policy=policy,
+                updated_at=updated_at,
+            )
+
+            if audit_context is not None:
+                action: AuditAction = (
+                    "POLICY_CREATED"
+                    if previous is None
+                    else "POLICY_UPDATED"
+                )
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=updated_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action=action,
+                        resource_type="POLICY",
+                        resource_id=policy.id,
+                        before=previous,
+                        after=saved,
+                        metadata={
+                            "new_version": saved.policy.version,
+                            "previous_version": (
+                                previous.policy.version
+                                if previous is not None
+                                else None
+                            ),
+                        },
+                    ),
+                )
+
+            return saved
 
     def list_project_policy_versions(
         self,
@@ -465,25 +775,88 @@ class EvidenceStore:
         policy_id: str,
         source_version: int,
         updated_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> ProjectPolicyConfiguration:
-        return self.policies.rollback(
-            project_id=project_id,
-            policy_id=policy_id,
-            source_version=source_version,
-            updated_at=updated_at,
-        )
+        with self.database.connect() as connection:
+            previous = (
+                self.policies.get_configuration_with_connection(
+                    connection=connection,
+                    project_id=project_id,
+                    policy_id=policy_id,
+                )
+            )
+            restored = self.policies.rollback_with_connection(
+                connection=connection,
+                project_id=project_id,
+                policy_id=policy_id,
+                source_version=source_version,
+                updated_at=updated_at,
+            )
+
+            if audit_context is not None:
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=updated_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action="POLICY_ROLLED_BACK",
+                        resource_type="POLICY",
+                        resource_id=policy_id,
+                        before=previous,
+                        after=restored,
+                        metadata={
+                            "source_version": source_version,
+                            "new_version": restored.policy.version,
+                        },
+                    ),
+                )
+
+            return restored
 
     def disable_project_policy(
         self,
         project_id: UUID,
         policy_id: str,
         updated_at: datetime,
+        audit_context: AuditContext | None = None,
     ) -> ProjectPolicyConfiguration | None:
-        return self.policies.disable(
-            project_id=project_id,
-            policy_id=policy_id,
-            updated_at=updated_at,
-        )
+        with self.database.connect() as connection:
+            previous = (
+                self.policies.get_configuration_with_connection(
+                    connection=connection,
+                    project_id=project_id,
+                    policy_id=policy_id,
+                )
+            )
+            disabled = self.policies.disable_with_connection(
+                connection=connection,
+                project_id=project_id,
+                policy_id=policy_id,
+                updated_at=updated_at,
+            )
+
+            if (
+                audit_context is not None
+                and previous is not None
+                and previous.enabled
+                and disabled is not None
+            ):
+                self.audit.insert(
+                    connection,
+                    build_audit_event(
+                        occurred_at=updated_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action="POLICY_DISABLED",
+                        resource_type="POLICY",
+                        resource_id=policy_id,
+                        before=previous,
+                        after=disabled,
+                    ),
+                )
+
+            return disabled
 
 
 __all__ = ["EvidenceStore"]

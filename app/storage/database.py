@@ -267,6 +267,84 @@ BEGIN
 END
 """
 
+CREATE_ADMINISTRATIVE_AUDIT_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS administrative_audit_events (
+    event_id TEXT PRIMARY KEY,
+    occurred_at TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    actor_type TEXT NOT NULL CHECK (
+        actor_type IN ('ADMIN', 'PROJECT', 'SYSTEM')
+    ),
+    actor_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (
+        action IN (
+            'PROJECT_CREATED',
+            'PROJECT_STATUS_CHANGED',
+            'API_KEY_CREATED',
+            'API_KEY_REVOKED',
+            'POLICY_CREATED',
+            'POLICY_UPDATED',
+            'POLICY_DISABLED',
+            'POLICY_ROLLED_BACK',
+            'APPROVAL_RESOLVED'
+        )
+    ),
+    resource_type TEXT NOT NULL CHECK (
+        resource_type IN (
+            'PROJECT',
+            'API_KEY',
+            'POLICY',
+            'APPROVAL'
+        )
+    ),
+    resource_id TEXT NOT NULL,
+    reason TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id)
+)
+"""
+
+CREATE_ADMINISTRATIVE_AUDIT_EVENTS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_admin_audit_events_occurred
+ON administrative_audit_events (
+    occurred_at DESC,
+    event_id DESC
+)
+"""
+
+CREATE_ADMINISTRATIVE_AUDIT_PROJECT_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_admin_audit_events_project
+ON administrative_audit_events (
+    project_id,
+    occurred_at DESC
+)
+"""
+
+CREATE_ADMINISTRATIVE_AUDIT_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_admin_audit_event_update
+BEFORE UPDATE ON administrative_audit_events
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'administrative audit events are immutable'
+    );
+END
+"""
+
+CREATE_ADMINISTRATIVE_AUDIT_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_admin_audit_event_delete
+BEFORE DELETE ON administrative_audit_events
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'administrative audit events are immutable'
+    );
+END
+"""
+
 
 class SQLiteDatabase:
     def __init__(self, database_path: Path) -> None:
@@ -482,6 +560,21 @@ class SQLiteDatabase:
             )
             connection.execute(
                 CREATE_PROJECT_POLICY_VERSIONS_DELETE_TRIGGER
+            )
+            connection.execute(
+                CREATE_ADMINISTRATIVE_AUDIT_EVENTS_TABLE
+            )
+            connection.execute(
+                CREATE_ADMINISTRATIVE_AUDIT_EVENTS_INDEX
+            )
+            connection.execute(
+                CREATE_ADMINISTRATIVE_AUDIT_PROJECT_INDEX
+            )
+            connection.execute(
+                CREATE_ADMINISTRATIVE_AUDIT_UPDATE_TRIGGER
+            )
+            connection.execute(
+                CREATE_ADMINISTRATIVE_AUDIT_DELETE_TRIGGER
             )
             connection.execute(CREATE_DECISIONS_TABLE)
             self._migrate_decisions_table(connection)

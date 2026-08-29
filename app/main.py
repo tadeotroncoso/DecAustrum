@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI
 
+from app.audit import SYSTEM_BOOTSTRAP_AUDIT_CONTEXT
 from app.bootstrap import bootstrap_default_project
 from app.dependencies import (
     DATABASE_PATH,
@@ -15,6 +16,7 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 from app.routers import (
+    admin_audit,
     admin_policies,
     admin_projects,
     approvals,
@@ -45,6 +47,7 @@ async def lifespan(_: FastAPI):
         project_id=DEFAULT_PROJECT_ID,
         policies=policy_templates,
         seeded_at=datetime.now(timezone.utc),
+        audit_context=SYSTEM_BOOTSTRAP_AUDIT_CONTEXT,
     )
 
     yield
@@ -57,6 +60,7 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(admin_audit.router)
 app.include_router(admin_projects.router)
 app.include_router(admin_policies.router)
 app.include_router(policies.router)

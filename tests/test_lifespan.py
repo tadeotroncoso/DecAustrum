@@ -56,12 +56,14 @@ def test_lifespan_initializes_application(
         project_id,
         policies,
         seeded_at,
+        audit_context,
     ):
         events.append(
             (
                 "seed",
                 project_id,
                 policies,
+                audit_context,
             )
         )
 
@@ -95,6 +97,7 @@ def test_lifespan_initializes_application(
             "seed",
             main_module.DEFAULT_PROJECT_ID,
             [],
+            main_module.SYSTEM_BOOTSTRAP_AUDIT_CONTEXT,
         ),
         "running",
     ]

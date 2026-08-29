@@ -20,8 +20,8 @@ routers. It must not contain endpoint or persistence logic.
 - response models and status codes;
 - delegation to application services or repositories.
 
-Routers are grouped by domain: administration, policies, authorization,
-decisions, approvals, and health.
+Routers are grouped by domain: administration, administrative audit, policies,
+authorization, decisions, approvals, and health.
 
 ### Application services
 
@@ -40,7 +40,8 @@ the store through FastAPI's dependency override mechanism.
 
 The policy engine and Pydantic models remain independent from FastAPI and
 SQLite. They define policy evaluation, decision priority, evidence, traces,
-projects, API keys, approvals, and authorization responses.
+projects, API keys, approvals, administrative audit events, and authorization
+responses.
 
 ### Persistence
 
@@ -48,6 +49,7 @@ projects, API keys, approvals, and authorization responses.
 
 - `projects.py`;
 - `api_keys.py`;
+- `audit.py`;
 - `policies.py`;
 - `decisions.py`;
 - `integrity.py`;
@@ -79,6 +81,10 @@ Two multi-domain operations are intentionally owned by `EvidenceStore`:
 - persisting an authorization with its integrity proof, optional approval, and
   idempotency record.
 
+Administrative mutations are also coordinated there so the state change and
+its audit event commit or roll back together. This covers project lifecycle,
+API-key lifecycle, policy configuration and rollback, and approval resolution.
+
 Policy configuration also has an explicit repository transaction: updating the
 active policy snapshot and appending its immutable version either both succeed
 or both roll back.
@@ -100,6 +106,52 @@ Project status transitions follow these rules:
 - the default system project cannot be disabled through the administration API.
 
 All project listing and lifecycle routes require the administrator API key.
+
+## Immutable administrative audit
+
+`administrative_audit_events` is the append-only control-plane history. Every
+successful effective mutation records:
+
+- a unique event ID and UTC timestamp;
+- the affected project;
+- actor type (`ADMIN`, `PROJECT`, or `SYSTEM`) and actor identifier;
+- a constrained action and resource identity;
+- an optional reason;
+- JSON snapshots of the state before and after the mutation;
+- action-specific metadata such as policy versions or approval resolution.
+
+The recorded actions are project creation and status changes, API-key creation
+and revocation, policy creation, update, disable and rollback, and approval
+resolution. Initial project templates and default-project bootstrap operations
+are attributed to `regtrace-bootstrap` as a `SYSTEM` actor.
+
+Administrative API clients can identify the operator with `X-Admin-Actor` and
+provide a ticket or explanation with `X-Audit-Reason`. Existing clients remain
+compatible: when the actor header is absent, RegTrace records
+`admin-api-key`. Approval resolution uses the authenticated project as the
+actor type and the request's `resolved_by` and optional `reason` values.
+
+Only effective state changes create events. Repeating an already completed
+status change, key revocation, or policy disable is operationally idempotent
+and does not append misleading duplicates. Failed validation and failed state
+changes create no event. More importantly, the mutation and event share one
+SQLite transaction; an audit insert failure rolls back the domain mutation.
+
+API-key audit snapshots use public metadata only. Raw keys and key hashes are
+never included. SQLite foreign keys preserve project ownership, and triggers
+reject every `UPDATE` or `DELETE` against audit rows.
+
+The administrator-only API supports paginated global or project-scoped
+listing, exact event retrieval, and filters for action, resource, actor, and
+timezone-aware occurrence range.
+
+This log intentionally does not reconstruct historical administrative actions
+that happened before the table existed because their actor and reason cannot be
+known reliably. It is immutable against normal application and database writes,
+but it is not a signed non-repudiation mechanism: a privileged database operator
+could drop protections. Administrator identity is also declarative while a
+shared admin key is used. SSO/RBAC identity and cryptographic audit anchoring
+belong to later production hardening.
 
 ## Immutable policy history
 

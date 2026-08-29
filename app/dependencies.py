@@ -1,8 +1,13 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Header
 
+from app.audit_models import (
+    AuditActorIdentifier,
+    AuditContext,
+    AuditReason,
+)
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
 from app.security import (
@@ -40,10 +45,24 @@ def require_admin_access(
         str | None,
         Depends(admin_api_key_header),
     ],
-) -> None:
+    admin_actor: Annotated[
+        AuditActorIdentifier | None,
+        Header(alias="X-Admin-Actor"),
+    ] = None,
+    audit_reason: Annotated[
+        AuditReason | None,
+        Header(alias="X-Audit-Reason"),
+    ] = None,
+) -> AuditContext:
     authenticate_admin(
         provided_api_key=provided_api_key,
         configured_api_key=(
             get_configured_admin_api_key()
         ),
+    )
+
+    return AuditContext(
+        actor_type="ADMIN",
+        actor_id=admin_actor or "admin-api-key",
+        reason=audit_reason,
     )

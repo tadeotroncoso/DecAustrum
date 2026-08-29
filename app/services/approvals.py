@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
+from app.audit_models import AuditContext
 from app.approval_models import (
     ApprovalRecord,
     ApprovalResolutionRequest,
@@ -29,6 +30,11 @@ def resolve_approval_request(
             status=status,
             resolved_by=resolution.resolved_by,
             resolved_at=datetime.now(timezone.utc),
+            audit_context=AuditContext(
+                actor_type="PROJECT",
+                actor_id=resolution.resolved_by,
+                reason=resolution.reason,
+            ),
         )
     except ApprovalNotFoundError as exc:
         raise HTTPException(

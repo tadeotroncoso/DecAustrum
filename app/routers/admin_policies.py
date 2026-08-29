@@ -6,6 +6,7 @@ from app.dependencies import (
     get_evidence_store,
     require_admin_access,
 )
+from app.audit_models import AuditContext
 from app.evidence_store import EvidenceStore
 from app.policy_models import (
     Policy,
@@ -148,12 +149,14 @@ def get_project_policy_version(
         "/policies/{policy_id}/rollback"
     ),
     response_model=ProjectPolicyConfiguration,
-    dependencies=[Depends(require_admin_access)],
 )
 def rollback_project_policy(
     project_id: UUID,
     policy_id: str,
     request: PolicyRollbackRequest,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ProjectPolicyConfiguration:
     return rollback_policy(
@@ -161,6 +164,7 @@ def rollback_project_policy(
         policy_id=policy_id,
         source_version=request.version,
         store=store,
+        audit_context=audit_context,
     )
 
 
@@ -170,12 +174,14 @@ def rollback_project_policy(
         "/policies/{policy_id}"
     ),
     response_model=ProjectPolicyConfiguration,
-    dependencies=[Depends(require_admin_access)],
 )
 def configure_project_policy(
     project_id: UUID,
     policy_id: str,
     policy: Policy,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ProjectPolicyConfiguration:
     return configure_policy(
@@ -183,6 +189,7 @@ def configure_project_policy(
         policy_id=policy_id,
         policy=policy,
         store=store,
+        audit_context=audit_context,
     )
 
 
@@ -192,15 +199,18 @@ def configure_project_policy(
         "/policies/{policy_id}"
     ),
     response_model=ProjectPolicyConfiguration,
-    dependencies=[Depends(require_admin_access)],
 )
 def disable_project_policy(
     project_id: UUID,
     policy_id: str,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ProjectPolicyConfiguration:
     return disable_policy(
         project_id=project_id,
         policy_id=policy_id,
         store=store,
+        audit_context=audit_context,
     )

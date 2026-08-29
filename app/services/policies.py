@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
+from app.audit_models import AuditContext
 from app.evidence_store import EvidenceStore
 from app.exceptions import (
     PolicyVersionAlreadyCurrentError,
@@ -49,6 +50,7 @@ def configure_policy(
     policy_id: str,
     policy: Policy,
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> ProjectPolicyConfiguration:
     get_project_or_404(
         project_id=project_id,
@@ -74,6 +76,7 @@ def configure_policy(
             project_id=project_id,
             policy=policy,
             updated_at=datetime.now(timezone.utc),
+            audit_context=audit_context,
         )
     except PolicyVersionConflictError as exc:
         raise HTTPException(
@@ -131,6 +134,7 @@ def rollback_policy(
     policy_id: str,
     source_version: int,
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> ProjectPolicyConfiguration:
     get_project_or_404(
         project_id=project_id,
@@ -148,6 +152,7 @@ def rollback_policy(
             policy_id=policy_id,
             source_version=source_version,
             updated_at=datetime.now(timezone.utc),
+            audit_context=audit_context,
         )
     except PolicyVersionNotFoundError as exc:
         raise HTTPException(
@@ -185,6 +190,7 @@ def disable_policy(
     project_id: UUID,
     policy_id: str,
     store: EvidenceStore,
+    audit_context: AuditContext,
 ) -> ProjectPolicyConfiguration:
     get_project_or_404(
         project_id=project_id,
@@ -195,6 +201,7 @@ def disable_policy(
         project_id=project_id,
         policy_id=policy_id,
         updated_at=datetime.now(timezone.utc),
+        audit_context=audit_context,
     )
 
     if configuration is None:

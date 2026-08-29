@@ -6,6 +6,7 @@ from app.api_keys import (
     get_api_key_prefix,
     hash_api_key,
 )
+from app.audit import SYSTEM_BOOTSTRAP_AUDIT_CONTEXT
 from app.evidence_store import EvidenceStore
 from app.project_models import (
     DEFAULT_PROJECT_ID,
@@ -56,6 +57,7 @@ def bootstrap_default_project(
         store.save_project_with_api_key(
             project=project,
             api_key=api_key_record,
+            audit_context=SYSTEM_BOOTSTRAP_AUDIT_CONTEXT,
         )
 
         return project
@@ -65,6 +67,9 @@ def bootstrap_default_project(
             "Default project is disabled."
         )
 
-    store.save_project_api_key(api_key_record)
+    store.save_project_api_key(
+        api_key_record,
+        audit_context=SYSTEM_BOOTSTRAP_AUDIT_CONTEXT,
+    )
 
     return project

@@ -51,28 +51,38 @@ class ProjectRepository:
         with self.database.connect() as connection:
             self.insert(connection, project)
 
-    def get(self, project_id: UUID) -> Project | None:
-        with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            row = connection.execute(
-                """
-                SELECT
-                    project_id,
-                    name,
-                    status,
-                    created_at,
-                    updated_at
-                FROM projects
-                WHERE project_id = ?
-                """,
-                (str(project_id),),
-            ).fetchone()
+    @classmethod
+    def get_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+    ) -> Project | None:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT
+                project_id,
+                name,
+                status,
+                created_at,
+                updated_at
+            FROM projects
+            WHERE project_id = ?
+            """,
+            (str(project_id),),
+        ).fetchone()
 
         if row is None:
             return None
 
-        return self._row_to_project(row)
+        return cls._row_to_project(row)
+
+    def get(self, project_id: UUID) -> Project | None:
+        with self.database.connect() as connection:
+            return self.get_with_connection(
+                connection,
+                project_id,
+            )
 
     def list(
         self,
@@ -151,6 +161,38 @@ class ProjectRepository:
 
         return int(row[0])
 
+    @classmethod
+    def update_status_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        status: ProjectStatus,
+        updated_at: datetime,
+    ) -> Project | None:
+        connection.execute(
+            """
+            UPDATE projects
+            SET
+                updated_at = CASE
+                    WHEN status != ? THEN ?
+                    ELSE updated_at
+                END,
+                status = ?
+            WHERE project_id = ?
+            """,
+            (
+                status,
+                updated_at.isoformat(),
+                status,
+                str(project_id),
+            ),
+        )
+
+        return cls.get_with_connection(
+            connection,
+            project_id,
+        )
+
     def update_status(
         self,
         project_id: UUID,
@@ -158,42 +200,9 @@ class ProjectRepository:
         updated_at: datetime,
     ) -> Project | None:
         with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            connection.execute(
-                """
-                UPDATE projects
-                SET
-                    updated_at = CASE
-                        WHEN status != ? THEN ?
-                        ELSE updated_at
-                    END,
-                    status = ?
-                WHERE project_id = ?
-                """,
-                (
-                    status,
-                    updated_at.isoformat(),
-                    status,
-                    str(project_id),
-                ),
+            return self.update_status_with_connection(
+                connection=connection,
+                project_id=project_id,
+                status=status,
+                updated_at=updated_at,
             )
-
-            row = connection.execute(
-                """
-                SELECT
-                    project_id,
-                    name,
-                    status,
-                    created_at,
-                    updated_at
-                FROM projects
-                WHERE project_id = ?
-                """,
-                (str(project_id),),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        return self._row_to_project(row)

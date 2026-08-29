@@ -63,6 +63,37 @@ class ProjectApiKeyRepository:
         with self.database.connect() as connection:
             self.insert(connection, api_key)
 
+    @classmethod
+    def get_metadata_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        api_key_id: UUID,
+    ) -> ProjectApiKeyMetadata | None:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT
+                api_key_id,
+                project_id,
+                key_prefix,
+                created_at,
+                revoked_at
+            FROM project_api_keys
+            WHERE project_id = ?
+            AND api_key_id = ?
+            """,
+            (
+                str(project_id),
+                str(api_key_id),
+            ),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return cls._row_to_metadata(row)
+
     def list(
         self,
         project_id: UUID,
@@ -110,6 +141,34 @@ class ProjectApiKeyRepository:
 
         return int(row[0])
 
+    @classmethod
+    def revoke_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        api_key_id: UUID,
+        revoked_at: datetime,
+    ) -> ProjectApiKeyMetadata | None:
+        connection.execute(
+            """
+            UPDATE project_api_keys
+            SET revoked_at = COALESCE(revoked_at, ?)
+            WHERE project_id = ?
+            AND api_key_id = ?
+            """,
+            (
+                revoked_at.isoformat(),
+                str(project_id),
+                str(api_key_id),
+            ),
+        )
+
+        return cls.get_metadata_with_connection(
+            connection=connection,
+            project_id=project_id,
+            api_key_id=api_key_id,
+        )
+
     def revoke(
         self,
         project_id: UUID,
@@ -117,44 +176,12 @@ class ProjectApiKeyRepository:
         revoked_at: datetime,
     ) -> ProjectApiKeyMetadata | None:
         with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            connection.execute(
-                """
-                UPDATE project_api_keys
-                SET revoked_at = COALESCE(revoked_at, ?)
-                WHERE project_id = ?
-                AND api_key_id = ?
-                """,
-                (
-                    revoked_at.isoformat(),
-                    str(project_id),
-                    str(api_key_id),
-                ),
+            return self.revoke_with_connection(
+                connection=connection,
+                project_id=project_id,
+                api_key_id=api_key_id,
+                revoked_at=revoked_at,
             )
-
-            row = connection.execute(
-                """
-                SELECT
-                    api_key_id,
-                    project_id,
-                    key_prefix,
-                    created_at,
-                    revoked_at
-                FROM project_api_keys
-                WHERE project_id = ?
-                AND api_key_id = ?
-                """,
-                (
-                    str(project_id),
-                    str(api_key_id),
-                ),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        return self._row_to_metadata(row)
 
     def get_active_project_by_hash(
         self,

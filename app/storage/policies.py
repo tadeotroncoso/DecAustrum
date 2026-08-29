@@ -178,37 +178,49 @@ class ProjectPolicyRepository:
             if configuration.enabled
         ]
 
+    @classmethod
+    def get_configuration_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        policy_id: str,
+    ) -> ProjectPolicyConfiguration | None:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT
+                project_id,
+                policy_id,
+                version,
+                policy_json,
+                enabled,
+                updated_at
+            FROM project_policies
+            WHERE project_id = ?
+            AND policy_id = ?
+            """,
+            (
+                str(project_id),
+                policy_id,
+            ),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return cls._row_to_configuration(row)
+
     def get_configuration(
         self,
         project_id: UUID,
         policy_id: str,
     ) -> ProjectPolicyConfiguration | None:
         with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            row = connection.execute(
-                """
-                SELECT
-                    project_id,
-                    policy_id,
-                    version,
-                    policy_json,
-                    enabled,
-                    updated_at
-                FROM project_policies
-                WHERE project_id = ?
-                AND policy_id = ?
-                """,
-                (
-                    str(project_id),
-                    policy_id,
-                ),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        return self._row_to_configuration(row)
+            return self.get_configuration_with_connection(
+                connection=connection,
+                project_id=project_id,
+                policy_id=policy_id,
+            )
 
     def get_active(
         self,
@@ -228,7 +240,7 @@ class ProjectPolicyRepository:
 
         return configuration.policy
 
-    def _save_with_connection(
+    def save_with_connection(
         self,
         connection: sqlite3.Connection,
         project_id: UUID,
@@ -415,7 +427,7 @@ class ProjectPolicyRepository:
         updated_at: datetime,
     ) -> ProjectPolicyConfiguration:
         with self.database.connect() as connection:
-            return self._save_with_connection(
+            return self.save_with_connection(
                 connection=connection,
                 project_id=project_id,
                 policy=policy,
@@ -518,6 +530,87 @@ class ProjectPolicyRepository:
 
         return self._row_to_version(row)
 
+    def rollback_with_connection(
+        self,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        policy_id: str,
+        source_version: int,
+        updated_at: datetime,
+    ) -> ProjectPolicyConfiguration:
+        connection.row_factory = sqlite3.Row
+
+        historical_row = connection.execute(
+            """
+            SELECT
+                project_id,
+                policy_id,
+                version,
+                policy_json,
+                change_type,
+                source_version,
+                created_at
+            FROM project_policy_versions
+            WHERE project_id = ?
+            AND policy_id = ?
+            AND version = ?
+            """,
+            (
+                str(project_id),
+                policy_id,
+                source_version,
+            ),
+        ).fetchone()
+
+        if historical_row is None:
+            raise PolicyVersionNotFoundError(
+                policy_id=policy_id,
+                version=source_version,
+            )
+
+        current_row = connection.execute(
+            """
+            SELECT version
+            FROM project_policies
+            WHERE project_id = ?
+            AND policy_id = ?
+            """,
+            (
+                str(project_id),
+                policy_id,
+            ),
+        ).fetchone()
+
+        if current_row is None:
+            raise PolicyVersionNotFoundError(
+                policy_id=policy_id,
+                version=source_version,
+            )
+
+        current_version = int(current_row["version"])
+
+        if source_version == current_version:
+            raise PolicyVersionAlreadyCurrentError(
+                policy_id=policy_id,
+                version=source_version,
+            )
+
+        historical_version = self._row_to_version(
+            historical_row
+        )
+        restored_policy = historical_version.policy.model_copy(
+            update={"version": current_version + 1}
+        )
+
+        return self.save_with_connection(
+            connection=connection,
+            project_id=project_id,
+            policy=restored_policy,
+            updated_at=updated_at,
+            change_type="ROLLBACK",
+            source_version=source_version,
+        )
+
     def rollback(
         self,
         project_id: UUID,
@@ -526,82 +619,55 @@ class ProjectPolicyRepository:
         updated_at: datetime,
     ) -> ProjectPolicyConfiguration:
         with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            historical_row = connection.execute(
-                """
-                SELECT
-                    project_id,
-                    policy_id,
-                    version,
-                    policy_json,
-                    change_type,
-                    source_version,
-                    created_at
-                FROM project_policy_versions
-                WHERE project_id = ?
-                AND policy_id = ?
-                AND version = ?
-                """,
-                (
-                    str(project_id),
-                    policy_id,
-                    source_version,
-                ),
-            ).fetchone()
-
-            if historical_row is None:
-                raise PolicyVersionNotFoundError(
-                    policy_id=policy_id,
-                    version=source_version,
-                )
-
-            current_row = connection.execute(
-                """
-                SELECT version
-                FROM project_policies
-                WHERE project_id = ?
-                AND policy_id = ?
-                """,
-                (
-                    str(project_id),
-                    policy_id,
-                ),
-            ).fetchone()
-
-            if current_row is None:
-                raise PolicyVersionNotFoundError(
-                    policy_id=policy_id,
-                    version=source_version,
-                )
-
-            current_version = int(current_row["version"])
-
-            if source_version == current_version:
-                raise PolicyVersionAlreadyCurrentError(
-                    policy_id=policy_id,
-                    version=source_version,
-                )
-
-            historical_version = self._row_to_version(
-                historical_row
-            )
-            restored_policy = (
-                historical_version.policy.model_copy(
-                    update={
-                        "version": current_version + 1,
-                    }
-                )
-            )
-
-            return self._save_with_connection(
+            return self.rollback_with_connection(
                 connection=connection,
                 project_id=project_id,
-                policy=restored_policy,
-                updated_at=updated_at,
-                change_type="ROLLBACK",
+                policy_id=policy_id,
                 source_version=source_version,
+                updated_at=updated_at,
             )
+
+    @classmethod
+    def disable_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        policy_id: str,
+        updated_at: datetime,
+    ) -> ProjectPolicyConfiguration | None:
+        existing = cls.get_configuration_with_connection(
+            connection=connection,
+            project_id=project_id,
+            policy_id=policy_id,
+        )
+
+        if existing is None:
+            return None
+
+        connection.execute(
+            """
+            UPDATE project_policies
+            SET
+                updated_at = CASE
+                    WHEN enabled = 1 THEN ?
+                    ELSE updated_at
+                END,
+                enabled = 0
+            WHERE project_id = ?
+            AND policy_id = ?
+            """,
+            (
+                updated_at.isoformat(),
+                str(project_id),
+                policy_id,
+            ),
+        )
+
+        return cls.get_configuration_with_connection(
+            connection=connection,
+            project_id=project_id,
+            policy_id=policy_id,
+        )
 
     def disable(
         self,
@@ -610,60 +676,9 @@ class ProjectPolicyRepository:
         updated_at: datetime,
     ) -> ProjectPolicyConfiguration | None:
         with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            existing = connection.execute(
-                """
-                SELECT 1
-                FROM project_policies
-                WHERE project_id = ?
-                AND policy_id = ?
-                """,
-                (
-                    str(project_id),
-                    policy_id,
-                ),
-            ).fetchone()
-
-            if existing is None:
-                return None
-
-            connection.execute(
-                """
-                UPDATE project_policies
-                SET
-                    updated_at = CASE
-                        WHEN enabled = 1 THEN ?
-                        ELSE updated_at
-                    END,
-                    enabled = 0
-                WHERE project_id = ?
-                AND policy_id = ?
-                """,
-                (
-                    updated_at.isoformat(),
-                    str(project_id),
-                    policy_id,
-                ),
+            return self.disable_with_connection(
+                connection=connection,
+                project_id=project_id,
+                policy_id=policy_id,
+                updated_at=updated_at,
             )
-
-            row = connection.execute(
-                """
-                SELECT
-                    project_id,
-                    policy_id,
-                    version,
-                    policy_json,
-                    enabled,
-                    updated_at
-                FROM project_policies
-                WHERE project_id = ?
-                AND policy_id = ?
-                """,
-                (
-                    str(project_id),
-                    policy_id,
-                ),
-            ).fetchone()
-
-        return self._row_to_configuration(row)

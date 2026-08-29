@@ -7,6 +7,7 @@ from app.api_keys import (
     ProjectApiKeyPage,
     ProjectApiKeyProvisioningResponse,
 )
+from app.audit_models import AuditContext
 from app.dependencies import (
     get_evidence_store,
     require_admin_access,
@@ -66,10 +67,12 @@ def list_projects(
     "/v1/admin/projects",
     response_model=ProjectProvisioningResponse,
     status_code=201,
-    dependencies=[Depends(require_admin_access)],
 )
 def provision_project(
     request: ProjectCreateRequest,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     policy_templates: list[Policy] = Depends(
         get_policy_templates
     ),
@@ -79,6 +82,7 @@ def provision_project(
         request=request,
         policy_templates=policy_templates,
         store=store,
+        audit_context=audit_context,
     )
 
 
@@ -100,17 +104,20 @@ def get_project(
 @router.patch(
     "/v1/admin/projects/{project_id}",
     response_model=Project,
-    dependencies=[Depends(require_admin_access)],
 )
 def update_project_status(
     project_id: UUID,
     request: ProjectStatusUpdateRequest,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> Project:
     return change_project_status(
         project_id=project_id,
         status=request.status,
         store=store,
+        audit_context=audit_context,
     )
 
 
@@ -118,15 +125,18 @@ def update_project_status(
     "/v1/admin/projects/{project_id}/api-keys",
     response_model=ProjectApiKeyProvisioningResponse,
     status_code=201,
-    dependencies=[Depends(require_admin_access)],
 )
 def provision_project_api_key(
     project_id: UUID,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ProjectApiKeyProvisioningResponse:
     return create_project_api_key(
         project_id=project_id,
         store=store,
+        audit_context=audit_context,
     )
 
 
@@ -164,15 +174,18 @@ def list_project_api_keys(
         "/api-keys/{api_key_id}"
     ),
     response_model=ProjectApiKeyMetadata,
-    dependencies=[Depends(require_admin_access)],
 )
 def revoke_project_api_key(
     project_id: UUID,
     api_key_id: UUID,
+    audit_context: AuditContext = Depends(
+        require_admin_access
+    ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ProjectApiKeyMetadata:
     return revoke_api_key(
         project_id=project_id,
         api_key_id=api_key_id,
         store=store,
+        audit_context=audit_context,
     )
