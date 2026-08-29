@@ -63,3 +63,33 @@ class PolicyVersionConflictError(Exception):
             f"Policy '{policy_id}' must use version "
             f"{expected_version}, not {provided_version}."
         )
+
+
+class PolicyVersionNotFoundError(Exception):
+    def __init__(
+        self,
+        policy_id: str,
+        version: int,
+    ) -> None:
+        self.policy_id = policy_id
+        self.version = version
+
+        super().__init__(
+            f"Policy '{policy_id}' version {version} "
+            "was not found."
+        )
+
+
+class PolicyVersionAlreadyCurrentError(Exception):
+    def __init__(
+        self,
+        policy_id: str,
+        version: int,
+    ) -> None:
+        self.policy_id = policy_id
+        self.version = version
+
+        super().__init__(
+            f"Policy '{policy_id}' is already at "
+            f"version {version}."
+        )

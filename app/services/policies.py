@@ -4,10 +4,15 @@ from uuid import UUID
 from fastapi import HTTPException
 
 from app.evidence_store import EvidenceStore
-from app.exceptions import PolicyVersionConflictError
+from app.exceptions import (
+    PolicyVersionAlreadyCurrentError,
+    PolicyVersionConflictError,
+    PolicyVersionNotFoundError,
+)
 from app.policy_models import (
     Policy,
     ProjectPolicyConfiguration,
+    ProjectPolicyVersion,
 )
 from app.services.projects import get_project_or_404
 
@@ -70,6 +75,100 @@ def configure_policy(
             policy=policy,
             updated_at=datetime.now(timezone.utc),
         )
+    except PolicyVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "policy_version_conflict",
+                "message": str(exc),
+                "expected_version": exc.expected_version,
+                "provided_version": exc.provided_version,
+            },
+        ) from exc
+
+
+def get_project_policy_version_or_404(
+    project_id: UUID,
+    policy_id: str,
+    version: int,
+    store: EvidenceStore,
+) -> ProjectPolicyVersion:
+    get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+    get_project_policy_or_404(
+        project_id=project_id,
+        policy_id=policy_id,
+        store=store,
+    )
+
+    policy_version = store.get_project_policy_version(
+        project_id=project_id,
+        policy_id=policy_id,
+        version=version,
+    )
+
+    if policy_version is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "policy_version_not_found",
+                "message": (
+                    f"Policy '{policy_id}' version {version} "
+                    "was not found."
+                ),
+                "policy_id": policy_id,
+                "version": version,
+            },
+        )
+
+    return policy_version
+
+
+def rollback_policy(
+    project_id: UUID,
+    policy_id: str,
+    source_version: int,
+    store: EvidenceStore,
+) -> ProjectPolicyConfiguration:
+    get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+    get_project_policy_or_404(
+        project_id=project_id,
+        policy_id=policy_id,
+        store=store,
+    )
+
+    try:
+        return store.rollback_project_policy(
+            project_id=project_id,
+            policy_id=policy_id,
+            source_version=source_version,
+            updated_at=datetime.now(timezone.utc),
+        )
+    except PolicyVersionNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "policy_version_not_found",
+                "message": str(exc),
+                "policy_id": exc.policy_id,
+                "version": exc.version,
+            },
+        ) from exc
+    except PolicyVersionAlreadyCurrentError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "policy_version_already_current",
+                "message": str(exc),
+                "policy_id": exc.policy_id,
+                "version": exc.version,
+            },
+        ) from exc
     except PolicyVersionConflictError as exc:
         raise HTTPException(
             status_code=409,

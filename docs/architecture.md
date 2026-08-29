@@ -76,6 +76,10 @@ Two multi-domain operations are intentionally owned by `EvidenceStore`:
 - provisioning a project with its first API key and policy templates;
 - persisting an authorization with its optional approval and idempotency record.
 
+Policy configuration also has an explicit repository transaction: updating the
+active policy snapshot and appending its immutable version either both succeed
+or both roll back.
+
 If any write fails, SQLite rolls back the complete operation. Domain
 repositories expose connection-aware insert methods only for these coordinated
 transactions.
@@ -93,6 +97,33 @@ Project status transitions follow these rules:
 - the default system project cannot be disabled through the administration API.
 
 All project listing and lifecycle routes require the administrator API key.
+
+## Immutable policy history
+
+`project_policies` contains the current policy configuration used by the policy
+engine. `project_policy_versions` is the append-only audit history. Each history
+row contains the complete policy definition, its project and version identity,
+the creation time, and one of these change types:
+
+- `CREATED`: the first version of a policy;
+- `UPDATED`: a normal policy revision;
+- `ROLLBACK`: a new version copied from an older revision;
+- `MIGRATED`: the current snapshot found when upgrading a legacy database.
+
+Rollback never rewrites an old row or moves the current version backwards. If
+version 2 is current and version 1 is restored, RegTrace creates version 3 with
+`change_type=ROLLBACK` and `source_version=1`. The current policy is re-enabled
+as part of that transaction. Disabling a policy changes operational state but
+does not create a content version.
+
+SQLite triggers reject `UPDATE` and `DELETE` operations on history rows. The
+primary key `(project_id, policy_id, version)` and every history query preserve
+tenant isolation. Administrative endpoints support paginated history listing,
+single-version retrieval, and rollback; tenant API keys cannot use them.
+
+When an existing database is upgraded, RegTrace can only preserve the current
+snapshot because older overwritten definitions no longer exist. It records that
+snapshot once as `MIGRATED`; initialization and backfill are idempotent.
 
 ## Dependency direction
 

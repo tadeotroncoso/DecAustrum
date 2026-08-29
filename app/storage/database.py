@@ -94,6 +94,69 @@ CREATE INDEX IF NOT EXISTS idx_project_policies_active
 ON project_policies (project_id, enabled, policy_id)
 """
 
+CREATE_PROJECT_POLICY_VERSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS project_policy_versions (
+    project_id TEXT NOT NULL,
+    policy_id TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    policy_json TEXT NOT NULL,
+    change_type TEXT NOT NULL CHECK (
+        change_type IN (
+            'CREATED',
+            'UPDATED',
+            'ROLLBACK',
+            'MIGRATED'
+        )
+    ),
+    source_version INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, policy_id, version),
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id),
+    CHECK (
+        (
+            change_type = 'ROLLBACK'
+            AND source_version IS NOT NULL
+        )
+        OR (
+            change_type != 'ROLLBACK'
+            AND source_version IS NULL
+        )
+    )
+)
+"""
+
+CREATE_PROJECT_POLICY_VERSIONS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_project_policy_versions_history
+ON project_policy_versions (
+    project_id,
+    policy_id,
+    version DESC
+)
+"""
+
+CREATE_PROJECT_POLICY_VERSIONS_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_project_policy_version_update
+BEFORE UPDATE ON project_policy_versions
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'project policy versions are immutable'
+    );
+END
+"""
+
+CREATE_PROJECT_POLICY_VERSIONS_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_project_policy_version_delete
+BEFORE DELETE ON project_policy_versions
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'project policy versions are immutable'
+    );
+END
+"""
+
 
 class SQLiteDatabase:
     def __init__(self, database_path: Path) -> None:
@@ -233,6 +296,33 @@ class SQLiteDatabase:
             "DROP TABLE legacy_idempotency_records"
         )
 
+    @staticmethod
+    def _backfill_project_policy_versions(
+        connection: sqlite3.Connection,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO project_policy_versions (
+                project_id,
+                policy_id,
+                version,
+                policy_json,
+                change_type,
+                source_version,
+                created_at
+            )
+            SELECT
+                project_id,
+                policy_id,
+                version,
+                policy_json,
+                'MIGRATED',
+                NULL,
+                updated_at
+            FROM project_policies
+            """
+        )
+
     def initialize(self) -> None:
         self.database_path.parent.mkdir(
             parents=True,
@@ -245,6 +335,19 @@ class SQLiteDatabase:
             connection.execute(CREATE_PROJECT_API_KEYS_TABLE)
             connection.execute(CREATE_PROJECT_POLICIES_TABLE)
             connection.execute(CREATE_PROJECT_POLICIES_INDEX)
+            connection.execute(
+                CREATE_PROJECT_POLICY_VERSIONS_TABLE
+            )
+            connection.execute(
+                CREATE_PROJECT_POLICY_VERSIONS_INDEX
+            )
+            self._backfill_project_policy_versions(connection)
+            connection.execute(
+                CREATE_PROJECT_POLICY_VERSIONS_UPDATE_TRIGGER
+            )
+            connection.execute(
+                CREATE_PROJECT_POLICY_VERSIONS_DELETE_TRIGGER
+            )
             connection.execute(CREATE_DECISIONS_TABLE)
             self._migrate_decisions_table(connection)
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)

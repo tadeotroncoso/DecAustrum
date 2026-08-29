@@ -16,6 +16,7 @@ from app.idempotency import IdempotencyRecord
 from app.policy_models import (
     Policy,
     ProjectPolicyConfiguration,
+    ProjectPolicyVersion,
 )
 from app.project_models import Project, ProjectStatus
 from app.storage.api_keys import ProjectApiKeyRepository
@@ -360,6 +361,56 @@ class EvidenceStore:
         return self.policies.save(
             project_id=project_id,
             policy=policy,
+            updated_at=updated_at,
+        )
+
+    def list_project_policy_versions(
+        self,
+        project_id: UUID,
+        policy_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[ProjectPolicyVersion]:
+        return self.policies.list_versions(
+            project_id=project_id,
+            policy_id=policy_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_project_policy_versions(
+        self,
+        project_id: UUID,
+        policy_id: str,
+    ) -> int:
+        return self.policies.count_versions(
+            project_id=project_id,
+            policy_id=policy_id,
+        )
+
+    def get_project_policy_version(
+        self,
+        project_id: UUID,
+        policy_id: str,
+        version: int,
+    ) -> ProjectPolicyVersion | None:
+        return self.policies.get_version(
+            project_id=project_id,
+            policy_id=policy_id,
+            version=version,
+        )
+
+    def rollback_project_policy(
+        self,
+        project_id: UUID,
+        policy_id: str,
+        source_version: int,
+        updated_at: datetime,
+    ) -> ProjectPolicyConfiguration:
+        return self.policies.rollback(
+            project_id=project_id,
+            policy_id=policy_id,
+            source_version=source_version,
             updated_at=updated_at,
         )
 
