@@ -21,6 +21,51 @@ CREATE TABLE IF NOT EXISTS authorization_decisions (
 )
 """
 
+CREATE_DECISIONS_PROJECT_TIME_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_decisions_project_time
+ON authorization_decisions (
+    project_id,
+    evaluated_at DESC,
+    decision_id DESC
+)
+"""
+
+CREATE_DECISIONS_PROJECT_DECISION_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_decisions_project_decision
+ON authorization_decisions (
+    project_id,
+    decision,
+    evaluated_at DESC
+)
+"""
+
+CREATE_DECISIONS_PROJECT_AGENT_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_decisions_project_agent
+ON authorization_decisions (
+    project_id,
+    agent,
+    evaluated_at DESC
+)
+"""
+
+CREATE_DECISIONS_PROJECT_ACTION_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_decisions_project_action
+ON authorization_decisions (
+    project_id,
+    action,
+    evaluated_at DESC
+)
+"""
+
+CREATE_DECISIONS_PROJECT_POLICY_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_decisions_project_policy
+ON authorization_decisions (
+    project_id,
+    policy_id,
+    evaluated_at DESC
+)
+"""
+
 CREATE_DECISION_INTEGRITY_RECORDS_TABLE = """
 CREATE TABLE IF NOT EXISTS decision_integrity_records (
     decision_id TEXT PRIMARY KEY,
@@ -143,6 +188,11 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     FOREIGN KEY (decision_id)
         REFERENCES authorization_decisions(decision_id)
 )
+"""
+
+CREATE_APPROVAL_REQUESTS_STATUS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_approval_requests_status
+ON approval_requests (status, requested_at DESC)
 """
 
 CREATE_IDEMPOTENCY_RECORDS_TABLE = """
@@ -1017,6 +1067,21 @@ class SQLiteDatabase:
             connection.execute(CREATE_DECISIONS_TABLE)
             self._migrate_decisions_table(connection)
             connection.execute(
+                CREATE_DECISIONS_PROJECT_TIME_INDEX
+            )
+            connection.execute(
+                CREATE_DECISIONS_PROJECT_DECISION_INDEX
+            )
+            connection.execute(
+                CREATE_DECISIONS_PROJECT_AGENT_INDEX
+            )
+            connection.execute(
+                CREATE_DECISIONS_PROJECT_ACTION_INDEX
+            )
+            connection.execute(
+                CREATE_DECISIONS_PROJECT_POLICY_INDEX
+            )
+            connection.execute(
                 CREATE_DECISION_INTEGRITY_RECORDS_TABLE
             )
             self._migrate_decision_integrity_records_table(
@@ -1037,6 +1102,9 @@ class SQLiteDatabase:
                 CREATE_DECISION_INTEGRITY_DELETE_TRIGGER
             )
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
+            connection.execute(
+                CREATE_APPROVAL_REQUESTS_STATUS_INDEX
+            )
             connection.execute(CREATE_IDEMPOTENCY_RECORDS_TABLE)
 
             self._migrate_idempotency_records_table(

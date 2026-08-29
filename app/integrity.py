@@ -125,16 +125,57 @@ def calculate_integrity_record_hash(
     evaluated_at = authorization_payload_v1(
         authorization
     )["evaluated_at"]
-    envelope = {
-        "algorithm": INTEGRITY_ALGORITHM,
-        "created_at": evaluated_at,
-        "decision_id": str(authorization.decision_id),
+    envelope = integrity_record_envelope(
+        algorithm=INTEGRITY_ALGORITHM,
+        created_at=evaluated_at,
+        decision_id=authorization.decision_id,
+        payload_hash=payload_hash,
+        previous_hash=previous_hash,
+        project_id=authorization.project_id,
+        schema_version=INTEGRITY_SCHEMA_VERSION,
+        sequence_number=sequence_number,
+    )
+
+    return sha256_digest(canonical_json(envelope))
+
+
+def integrity_record_envelope(
+    *,
+    algorithm: str,
+    created_at: str,
+    decision_id: object,
+    payload_hash: str,
+    previous_hash: str | None,
+    project_id: object,
+    schema_version: int,
+    sequence_number: int,
+) -> dict[str, Any]:
+    return {
+        "algorithm": algorithm,
+        "created_at": created_at,
+        "decision_id": str(decision_id),
         "payload_hash": payload_hash,
         "previous_hash": previous_hash,
-        "project_id": str(authorization.project_id),
-        "schema_version": INTEGRITY_SCHEMA_VERSION,
+        "project_id": str(project_id),
+        "schema_version": schema_version,
         "sequence_number": sequence_number,
     }
+
+
+def calculate_integrity_proof_record_hash(
+    proof: DecisionIntegrityProof,
+) -> str:
+    serialized = proof.model_dump(mode="json")
+    envelope = integrity_record_envelope(
+        algorithm=proof.algorithm,
+        created_at=serialized["created_at"],
+        decision_id=proof.decision_id,
+        payload_hash=proof.payload_hash,
+        previous_hash=proof.previous_hash,
+        project_id=proof.project_id,
+        schema_version=proof.schema_version,
+        sequence_number=proof.sequence_number,
+    )
 
     return sha256_digest(canonical_json(envelope))
 

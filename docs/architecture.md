@@ -21,7 +21,8 @@ routers. It must not contain endpoint or persistence logic.
 - delegation to application services or repositories.
 
 Routers are grouped by domain: administration, administrative audit, policies,
-authorization, decisions, approvals, transactional webhooks, and health.
+authorization, decisions, evidence export, approvals, transactional webhooks,
+and health.
 
 ### Application services
 
@@ -52,6 +53,7 @@ responses.
 - `audit.py`;
 - `policies.py`;
 - `decisions.py`;
+- `evidence.py`;
 - `integrity.py`;
 - `approvals.py`;
 - `idempotency.py`;
@@ -353,6 +355,78 @@ not provide non-repudiation when no trusted checkpoint exists: a privileged
 operator able to drop database protections can recompute every hash. That
 stronger guarantee requires signing or externally anchoring periodic chain
 heads and is intentionally a separate production-hardening capability.
+
+## Evidence search and verifiable export
+
+Decision listing supports project-scoped combinations of decision, exact agent,
+exact action, policy, policy presence, approval status, timezone-aware evaluated
+range, case-insensitive text search, and ascending or descending order. Search
+uses parameterized SQL, deterministic `evaluated_at, decision_id` ordering, and
+compound project indexes. The tenant endpoint is `/v1/decisions`; administrators
+can inspect one managed project at
+`/v1/admin/projects/{project_id}/decisions`. Neither endpoint can query across
+tenant boundaries.
+
+The same filters are accepted by these authenticated export routes:
+
+- `/v1/evidence/export` and `/v1/evidence/bundle` for a tenant;
+- `/v1/admin/projects/{project_id}/evidence/export` and
+  `/v1/admin/projects/{project_id}/evidence/bundle` for administrators.
+
+The regular export supports streaming `json`, `ndjson`, and `csv` formats. Each
+selected decision includes its integrity proof; CSV keeps nested context,
+evidence, and trace values as canonical JSON columns. Response headers expose
+the project, snapshot time, selected record count, maximum sequence, and chain
+head. JSON also contains the criteria and snapshot in its envelope. Exports are
+bounded to 10,000 selected records so an accidental unfiltered request cannot
+consume unbounded memory or response time.
+
+An export captures the chain head and selected records in one SQLite read
+transaction. Later decisions receive higher sequence numbers and cannot enter
+that export. This also prevents an approval status transition during generation
+from changing which immutable decisions belong to the selected result. The
+response body is then encoded incrementally.
+
+The ZIP evidence bundle is the forensic format. It contains exactly:
+
+```text
+manifest.json
+records.ndjson
+chain.ndjson
+```
+
+`records.ndjson` contains the filtered decisions and their proofs.
+`chain.ndjson` contains every proof from sequence 1 through the captured head,
+not just matching decisions. This lets an offline verifier prove continuity,
+ordering, predecessor links, every record hash, and each selected decision's
+payload hash. The manifest records the exact filters, snapshot and generation
+times, project, counts, captured head, optional trusted checkpoint, and separate
+SHA-256 digests for the selected records, full chain, and logical bundle.
+
+Archive loading rejects duplicate, missing, or unexpected members, malformed
+JSON, invalid RegTrace models, and oversized uncompressed content. ZIP member
+metadata is deterministic, while verification hashes canonical logical data so
+irrelevant whitespace or ZIP compression differences do not alter the result.
+RegTrace verifies every generated bundle before returning it and refuses export
+with HTTP 409 if the live project ledger fails integrity verification. Bundle
+chains are also bounded to 100,000 records for this local MVP.
+
+The verifier does not require the API or database:
+
+```powershell
+python -m app.evidence_verifier evidence.zip
+python -m app.evidence_verifier evidence.zip `
+    --expected-head-hash <trusted-sha256-checkpoint>
+```
+
+It returns exit code 0 for verified evidence, 1 for a cryptographic verification
+failure, and 2 for an unreadable or malformed archive. Supplying a checkpoint
+that the verifier obtained through an independent trusted channel is the
+strongest mode: an older checkpoint remains valid after legitimate appends, but
+a rewritten or truncated chain is rejected. Without an external checkpoint the
+bundle proves internal consistency and detects accidental or partial tampering;
+as with the live ledger, an attacker able to replace the entire bundle and
+recompute every digest is outside the SHA-256-only non-repudiation guarantee.
 
 ## Dependency direction
 

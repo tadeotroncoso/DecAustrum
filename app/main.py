@@ -23,6 +23,7 @@ from app.routers import (
     approvals,
     authorization,
     decisions,
+    evidence,
     health,
     integrity,
     policies,
@@ -68,6 +69,7 @@ app.include_router(admin_webhooks.router)
 app.include_router(policies.router)
 app.include_router(authorization.router)
 app.include_router(decisions.router)
+app.include_router(evidence.router)
 app.include_router(integrity.router)
 app.include_router(approvals.router)
 

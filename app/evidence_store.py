@@ -1,4 +1,5 @@
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
@@ -21,10 +22,15 @@ from app.approval_models import (
     ApprovalStatus,
 )
 from app.authorization_models import AuthorizationResponse
+from app.evidence_models import (
+    DecisionSearchFilters,
+    EvidenceExportSnapshot,
+)
 from app.idempotency import IdempotencyRecord
 from app.integrity_models import (
     DecisionIntegrityProof,
     DecisionIntegrityVerification,
+    VerifiableDecisionRecord,
 )
 from app.policy_models import (
     Policy,
@@ -39,6 +45,7 @@ from app.storage.database import SQLiteDatabase
 from app.storage.decisions import (
     AuthorizationDecisionRepository,
 )
+from app.storage.evidence import EvidenceRepository
 from app.storage.idempotency import IdempotencyRepository
 from app.storage.integrity import DecisionIntegrityRepository
 from app.storage.policies import ProjectPolicyRepository
@@ -75,6 +82,7 @@ class EvidenceStore:
         self.decisions = AuthorizationDecisionRepository(
             self.database
         )
+        self.evidence_exports = EvidenceRepository(self.database)
         self.integrity = DecisionIntegrityRepository(
             self.database
         )
@@ -296,6 +304,32 @@ class EvidenceStore:
             offset=offset,
         )
 
+    def search_decisions(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[AuthorizationResponse]:
+        return self.decisions.search(
+            project_id=project_id,
+            filters=filters,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_searched_decisions(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+    ) -> int:
+        return self.decisions.count_search(
+            project_id=project_id,
+            filters=filters,
+        )
+
     def count(self, project_id: UUID) -> int:
         return self.decisions.count(project_id)
 
@@ -335,6 +369,70 @@ class EvidenceStore:
         return self.integrity.verify(
             project_id=project_id,
             expected_head_hash=expected_head_hash,
+        )
+
+    def create_evidence_export_snapshot(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+    ) -> EvidenceExportSnapshot:
+        return self.evidence_exports.create_snapshot(
+            project_id=project_id,
+            filters=filters,
+        )
+
+    def capture_evidence_export_records(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+        maximum_records: int,
+    ) -> tuple[
+        EvidenceExportSnapshot,
+        list[VerifiableDecisionRecord],
+    ]:
+        return self.evidence_exports.capture_records(
+            project_id=project_id,
+            filters=filters,
+            maximum_records=maximum_records,
+        )
+
+    def iter_evidence_records(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+        max_sequence_number: int,
+    ) -> Iterator[VerifiableDecisionRecord]:
+        return self.evidence_exports.iter_records(
+            project_id=project_id,
+            filters=filters,
+            max_sequence_number=max_sequence_number,
+        )
+
+    def list_evidence_records(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+        max_sequence_number: int,
+    ) -> list[VerifiableDecisionRecord]:
+        return self.evidence_exports.list_records(
+            project_id=project_id,
+            filters=filters,
+            max_sequence_number=max_sequence_number,
+        )
+
+    def list_evidence_chain(
+        self,
+        *,
+        project_id: UUID,
+        max_sequence_number: int,
+    ) -> list[DecisionIntegrityProof]:
+        return self.evidence_exports.list_chain(
+            project_id=project_id,
+            max_sequence_number=max_sequence_number,
         )
 
     def get_idempotency_record(

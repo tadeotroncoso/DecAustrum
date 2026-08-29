@@ -3,6 +3,7 @@ import sqlite3
 from uuid import UUID
 
 from app.authorization_models import AuthorizationResponse
+from app.evidence_models import DecisionSearchFilters
 from app.storage.database import SQLiteDatabase
 
 
@@ -132,6 +133,127 @@ class AuthorizationDecisionRepository:
             return None
 
         return self._row_to_authorization(row)
+
+    @staticmethod
+    def _search_where(
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+    ) -> tuple[str, list[object]]:
+        clauses = ["d.project_id = ?"]
+        parameters: list[object] = [str(project_id)]
+
+        for column, value in (
+            ("d.decision", filters.decision),
+            ("d.agent", filters.agent),
+            ("d.action", filters.action),
+            ("d.policy_id", filters.policy_id),
+        ):
+            if value is not None:
+                clauses.append(f"{column} = ?")
+                parameters.append(value)
+
+        if filters.has_policy is True:
+            clauses.append("d.policy_id IS NOT NULL")
+        elif filters.has_policy is False:
+            clauses.append("d.policy_id IS NULL")
+
+        if filters.approval_status == "NONE":
+            clauses.append("a.decision_id IS NULL")
+        elif filters.approval_status is not None:
+            clauses.append("a.status = ?")
+            parameters.append(filters.approval_status)
+
+        if filters.evaluated_after is not None:
+            clauses.append("d.evaluated_at >= ?")
+            parameters.append(
+                filters.evaluated_after.isoformat()
+            )
+
+        if filters.evaluated_before is not None:
+            clauses.append("d.evaluated_at <= ?")
+            parameters.append(
+                filters.evaluated_before.isoformat()
+            )
+
+        if filters.query is not None:
+            clauses.append(
+                """
+                (
+                    instr(lower(d.agent), lower(?)) > 0
+                    OR instr(lower(d.action), lower(?)) > 0
+                    OR instr(
+                        lower(COALESCE(d.policy_id, '')),
+                        lower(?)
+                    ) > 0
+                    OR instr(lower(d.reason), lower(?)) > 0
+                )
+                """
+            )
+            parameters.extend([filters.query] * 4)
+
+        return " AND ".join(clauses), parameters
+
+    def search(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[AuthorizationResponse]:
+        where_clause, parameters = self._search_where(
+            project_id,
+            filters,
+        )
+        direction = "ASC" if filters.sort == "asc" else "DESC"
+        parameters.extend([limit, offset])
+
+        with self.database.connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                f"""
+                SELECT d.*
+                FROM authorization_decisions AS d
+                LEFT JOIN approval_requests AS a
+                    ON a.decision_id = d.decision_id
+                WHERE {where_clause}
+                ORDER BY
+                    d.evaluated_at {direction},
+                    d.decision_id {direction}
+                LIMIT ? OFFSET ?
+                """,
+                parameters,
+            ).fetchall()
+
+        return [
+            self._row_to_authorization(row)
+            for row in rows
+        ]
+
+    def count_search(
+        self,
+        *,
+        project_id: UUID,
+        filters: DecisionSearchFilters,
+    ) -> int:
+        where_clause, parameters = self._search_where(
+            project_id,
+            filters,
+        )
+
+        with self.database.connect() as connection:
+            row = connection.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM authorization_decisions AS d
+                LEFT JOIN approval_requests AS a
+                    ON a.decision_id = d.decision_id
+                WHERE {where_clause}
+                """,
+                parameters,
+            ).fetchone()
+
+        return int(row[0])
 
     def list(
         self,
