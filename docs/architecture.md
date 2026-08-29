@@ -50,6 +50,7 @@ projects, API keys, approvals, and authorization responses.
 - `api_keys.py`;
 - `policies.py`;
 - `decisions.py`;
+- `integrity.py`;
 - `approvals.py`;
 - `idempotency.py`.
 
@@ -67,14 +68,16 @@ several repositories.
 3. Active policies are loaded for that project only.
 4. The policy engine returns a structured evaluation and complete trace.
 5. The service creates the decision and, when required, a pending approval.
-6. Decision, approval, and idempotency record are persisted in one transaction.
+6. Decision, integrity proof, approval, and idempotency record are persisted in
+   one transaction.
 
 ## Transaction boundaries
 
 Two multi-domain operations are intentionally owned by `EvidenceStore`:
 
 - provisioning a project with its first API key and policy templates;
-- persisting an authorization with its optional approval and idempotency record.
+- persisting an authorization with its integrity proof, optional approval, and
+  idempotency record.
 
 Policy configuration also has an explicit repository transaction: updating the
 active policy snapshot and appending its immutable version either both succeed
@@ -124,6 +127,76 @@ single-version retrieval, and rollback; tenant API keys cannot use them.
 When an existing database is upgraded, RegTrace can only preserve the current
 snapshot because older overwritten definitions no longer exist. It records that
 snapshot once as `MIGRATED`; initialization and backfill are idempotent.
+
+## Cryptographically verifiable decision ledger
+
+Every authorization decision is appended to a separate SHA-256 chain for its
+project. RegTrace serializes the fields defined by the immutable payload schema
+version 1 as canonical JSON using UTF-8, sorted object keys, compact separators,
+preserved Unicode, and rejected non-finite numbers. A later API response field
+therefore cannot silently change historical hashes. Version 1 contains
+`decision_id`, `project_id`, `evaluated_at`, `decision`, `policy`,
+`policy_version`, `reason`, `evidence`, `agent`, `action`, `context`, and
+`trace`. It then calculates:
+
+```text
+payload_hash = SHA-256(canonical_json(decision))
+```
+
+The integrity record is also canonicalized and hashed:
+
+```text
+record_hash = SHA-256(canonical_json({
+    algorithm,
+    created_at,
+    decision_id,
+    payload_hash,
+    previous_hash,
+    project_id,
+    schema_version,
+    sequence_number
+}))
+```
+
+The first project record has `sequence_number=1` and `previous_hash=null`.
+Every later record references the preceding `record_hash`. The schema version
+is part of the hashed envelope, so it cannot be changed without invalidating the
+proof. This makes payload changes, internal deletion, insertion, and reordering
+detectable. Decision and integrity rows are inserted in one SQLite transaction,
+and triggers reject updates or deletes from both tables.
+
+Existing decisions are backfilled once in deterministic order by
+`evaluated_at, decision_id`. A partially populated migration is rejected rather
+than silently constructing a chain over an ambiguous state.
+
+The authenticated integrity API provides:
+
+- a descending, paginated project ledger;
+- the proof for one decision;
+- a self-contained decision-and-proof evidence bundle;
+- complete project-chain verification;
+- verification that an optional, previously trusted `head_hash` checkpoint is
+  still present in the chain;
+- administrator verification for any managed project.
+
+Verification returns the first failing record and distinguishes missing
+records, sequence gaps, broken predecessor links, unsupported schema versions,
+unreadable decisions, timestamp mismatches, payload changes, invalid record
+hashes, and a chain head that differs from an external checkpoint. The
+checkpoint comparison also detects truncation from the end of an otherwise
+internally consistent chain. Later valid appends do not invalidate an older
+checkpoint.
+
+### Threat model
+
+The ledger is tamper-evident and independently reproducible from an exported
+evidence bundle. It protects against application bugs and database writes that
+do not also rebuild the complete chain. A client that stores a trusted head can
+also detect a later full-chain rewrite or tail truncation. SHA-256 alone does
+not provide non-repudiation when no trusted checkpoint exists: a privileged
+operator able to drop database protections can recompute every hash. That
+stronger guarantee requires signing or externally anchoring periodic chain
+heads and is intentionally a separate production-hardening capability.
 
 ## Dependency direction
 

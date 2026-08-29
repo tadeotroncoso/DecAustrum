@@ -13,6 +13,10 @@ from app.approval_models import (
 )
 from app.authorization_models import AuthorizationResponse
 from app.idempotency import IdempotencyRecord
+from app.integrity_models import (
+    DecisionIntegrityProof,
+    DecisionIntegrityVerification,
+)
 from app.policy_models import (
     Policy,
     ProjectPolicyConfiguration,
@@ -26,6 +30,7 @@ from app.storage.decisions import (
     AuthorizationDecisionRepository,
 )
 from app.storage.idempotency import IdempotencyRepository
+from app.storage.integrity import DecisionIntegrityRepository
 from app.storage.policies import ProjectPolicyRepository
 from app.storage.projects import ProjectRepository
 
@@ -41,6 +46,9 @@ class EvidenceStore:
         self.decisions = AuthorizationDecisionRepository(
             self.database
         )
+        self.integrity = DecisionIntegrityRepository(
+            self.database
+        )
         self.approvals = ApprovalRepository(self.database)
         self.idempotency = IdempotencyRepository(self.database)
 
@@ -50,6 +58,7 @@ class EvidenceStore:
 
     def initialize(self) -> None:
         self.database.initialize()
+        self.integrity.backfill_existing_decisions()
 
     def save_project(self, project: Project) -> None:
         self.projects.save(project)
@@ -94,7 +103,15 @@ class EvidenceStore:
         self,
         authorization: AuthorizationResponse,
     ) -> None:
-        self.decisions.save(authorization)
+        with self.database.connect() as connection:
+            self.decisions.insert(
+                connection,
+                authorization,
+            )
+            self.integrity.insert(
+                connection,
+                authorization,
+            )
 
     def get(
         self,
@@ -120,6 +137,44 @@ class EvidenceStore:
 
     def count(self, project_id: UUID) -> int:
         return self.decisions.count(project_id)
+
+    def get_decision_integrity(
+        self,
+        decision_id: UUID,
+        project_id: UUID,
+    ) -> DecisionIntegrityProof | None:
+        return self.integrity.get(
+            decision_id=decision_id,
+            project_id=project_id,
+        )
+
+    def list_decision_integrity_records(
+        self,
+        project_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[DecisionIntegrityProof]:
+        return self.integrity.list(
+            project_id=project_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_decision_integrity_records(
+        self,
+        project_id: UUID,
+    ) -> int:
+        return self.integrity.count(project_id)
+
+    def verify_decision_integrity(
+        self,
+        project_id: UUID,
+        expected_head_hash: str | None = None,
+    ) -> DecisionIntegrityVerification:
+        return self.integrity.verify(
+            project_id=project_id,
+            expected_head_hash=expected_head_hash,
+        )
 
     def get_idempotency_record(
         self,
@@ -224,6 +279,10 @@ class EvidenceStore:
 
         with self.database.connect() as connection:
             self.decisions.insert(
+                connection,
+                authorization,
+            )
+            self.integrity.insert(
                 connection,
                 authorization,
             )

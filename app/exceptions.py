@@ -93,3 +93,21 @@ class PolicyVersionAlreadyCurrentError(Exception):
             f"Policy '{policy_id}' is already at "
             f"version {version}."
         )
+
+
+class DecisionIntegrityMigrationError(Exception):
+    def __init__(
+        self,
+        project_id: UUID,
+        decision_count: int,
+        integrity_count: int,
+    ) -> None:
+        self.project_id = project_id
+        self.decision_count = decision_count
+        self.integrity_count = integrity_count
+
+        super().__init__(
+            f"Project '{project_id}' has {decision_count} "
+            "decisions but "
+            f"{integrity_count} integrity records."
+        )

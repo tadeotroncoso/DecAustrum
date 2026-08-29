@@ -107,13 +107,6 @@ class AuthorizationDecisionRepository:
             }
         )
 
-    def save(
-        self,
-        authorization: AuthorizationResponse,
-    ) -> None:
-        with self.database.connect() as connection:
-            self.insert(connection, authorization)
-
     def get(
         self,
         decision_id: UUID,

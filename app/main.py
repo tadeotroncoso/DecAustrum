@@ -21,6 +21,7 @@ from app.routers import (
     authorization,
     decisions,
     health,
+    integrity,
     policies,
 )
 from app.security import get_configured_api_key
@@ -61,6 +62,7 @@ app.include_router(admin_policies.router)
 app.include_router(policies.router)
 app.include_router(authorization.router)
 app.include_router(decisions.router)
+app.include_router(integrity.router)
 app.include_router(approvals.router)
 
 
