@@ -9,8 +9,10 @@ from app.authorization_models import (
 from app.dependencies import (
     get_authenticated_project,
     get_evidence_store,
+    get_metrics_registry,
 )
 from app.evidence_store import EvidenceStore
+from app.observability import MetricsRegistry
 from app.project_models import Project
 from app.services.authorization import authorize_request
 
@@ -36,10 +38,15 @@ def authorize(
         get_authenticated_project
     ),
     store: EvidenceStore = Depends(get_evidence_store),
+    metrics: MetricsRegistry = Depends(get_metrics_registry),
 ) -> AuthorizationResponse:
-    return authorize_request(
+    authorization = authorize_request(
         request=request,
         idempotency_key=idempotency_key,
         project=project,
         store=store,
     )
+    metrics.record_authorization_decision(
+        authorization.decision
+    )
+    return authorization

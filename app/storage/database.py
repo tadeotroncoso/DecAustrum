@@ -708,9 +708,50 @@ class SQLiteDatabase:
         self.database_path = database_path
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path)
+        connection = sqlite3.connect(
+            self.database_path,
+            timeout=5.0,
+        )
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA synchronous = NORMAL")
         return connection
+
+    def check_readiness(self) -> bool:
+        if not self.database_path.is_file():
+            return False
+
+        required_tables = {
+            "projects",
+            "authorization_decisions",
+            "decision_integrity_records",
+        }
+
+        with self.connect() as connection:
+            if connection.execute("SELECT 1").fetchone() != (1,):
+                return False
+
+            foreign_keys = connection.execute(
+                "PRAGMA foreign_keys"
+            ).fetchone()
+            journal_mode = connection.execute(
+                "PRAGMA journal_mode"
+            ).fetchone()
+            rows = connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                """
+            ).fetchall()
+
+        table_names = {row[0] for row in rows}
+        return (
+            foreign_keys == (1,)
+            and journal_mode is not None
+            and str(journal_mode[0]).lower() == "wal"
+            and required_tables <= table_names
+        )
 
     @staticmethod
     def _migrate_projects_table(
@@ -980,6 +1021,7 @@ class SQLiteDatabase:
         )
 
         with self.connect() as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
             connection.execute(CREATE_PROJECTS_TABLE)
             self._migrate_projects_table(connection)
             connection.execute(CREATE_PROJECT_API_KEYS_TABLE)

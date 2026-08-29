@@ -98,6 +98,9 @@ class EvidenceStore:
         self.database.initialize()
         self.integrity.backfill_existing_decisions()
 
+    def check_readiness(self) -> bool:
+        return self.database.check_readiness()
+
     def _enqueue_webhook_event(
         self,
         connection: sqlite3.Connection,

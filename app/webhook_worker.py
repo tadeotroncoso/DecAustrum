@@ -1,10 +1,13 @@
 import argparse
 import logging
+import os
 import time
 from collections.abc import Callable
 
 from app.dependencies import DATABASE_PATH
 from app.evidence_store import EvidenceStore
+from app.observability import configure_json_logging
+from app.runtime_config import RuntimeSettings
 from app.security import get_configured_webhook_master_secret
 from app.services.webhooks import dispatch_pending_webhooks
 from app.webhook_models import WebhookDispatchSummary
@@ -52,8 +55,8 @@ def run_webhook_worker(
 
         if last_summary.claimed:
             LOGGER.info(
-                "Processed webhook batch: %s",
-                last_summary.model_dump(),
+                "webhook_batch_processed",
+                extra=last_summary.model_dump(),
             )
 
         if once:
@@ -93,9 +96,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     arguments = build_argument_parser().parse_args()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    settings = RuntimeSettings.from_environment(os.environ)
+    configure_json_logging(
+        settings.log_level,
     )
     store = EvidenceStore(DATABASE_PATH)
     store.initialize()
@@ -112,7 +115,10 @@ def main() -> None:
             once=arguments.once,
         )
     except KeyboardInterrupt:
-        LOGGER.info("Webhook worker stopped.")
+        LOGGER.info("webhook_worker_stopped")
+    except Exception:
+        LOGGER.exception("webhook_worker_failed")
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

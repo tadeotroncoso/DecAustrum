@@ -445,6 +445,30 @@ main -> routers -> services -> domain / EvidenceStore
 Storage modules may depend on domain models. Domain models and the policy
 engine must not import routers, services, or storage modules.
 
+## Security and observability boundary
+
+`create_app()` constructs runtime settings, a bounded Prometheus registry, and
+a process-local rate limiter before registering the domain routers. A pure ASGI
+middleware wraps every HTTP route and centralizes trusted-host checks, optional
+CORS, production HTTPS enforcement, body and content-type limits, request IDs,
+rate limits, defensive response headers, safe 500 responses, request metrics,
+and structured access logs. Authentication remains a FastAPI dependency so
+tenant and administrator identity is resolved by the existing domain boundary.
+
+Metrics use route templates and fixed decision/security labels. Tenant IDs,
+resource IDs, request values, API keys, raw paths, and query strings never
+become labels or application-log fields. `/metrics` uses administrator
+authentication and is hidden from OpenAPI. `/health/live` is process-only;
+`/health/ready` verifies the SQLite connection and essential schema without
+returning storage details. The legacy `/health` response remains available.
+
+SQLite connections enable foreign keys, a bounded busy timeout, and
+`synchronous=NORMAL`; initialization enables WAL. The in-memory rate limiter
+and metrics registry deliberately match the current single-process SQLite MVP.
+Horizontal scaling requires shared rate-limit state, per-process metrics
+collection, and migration to a server database. Full deployment guidance and
+the configuration contract are in `docs/operations.md`.
+
 ## Adding functionality
 
 - Add a new endpoint to the router for its domain.
