@@ -19,6 +19,8 @@ def test_runtime_settings_have_safe_local_defaults():
     assert settings.cors_allowed_origins == ()
     assert settings.rate_limit_enabled is True
     assert settings.max_request_body_bytes == 1_048_576
+    assert settings.approval_ttl_seconds == 86_400
+    assert settings.execution_grant_ttl_seconds == 300
 
 
 def test_runtime_settings_parse_explicit_environment():
@@ -39,6 +41,8 @@ def test_runtime_settings_parse_explicit_environment():
             "REGTRACE_AUTHORIZATION_RATE_LIMIT": "10",
             "REGTRACE_TENANT_RATE_LIMIT": "20",
             "REGTRACE_ADMIN_RATE_LIMIT": "5",
+            "REGTRACE_APPROVAL_TTL_SECONDS": "3600",
+            "REGTRACE_EXECUTION_GRANT_TTL_SECONDS": "120",
             "REGTRACE_LOG_LEVEL": "warning",
         }
     )
@@ -58,6 +62,8 @@ def test_runtime_settings_parse_explicit_environment():
     assert settings.authorization_rate_limit == 10
     assert settings.tenant_rate_limit == 20
     assert settings.admin_rate_limit == 5
+    assert settings.approval_ttl_seconds == 3600
+    assert settings.execution_grant_ttl_seconds == 120
     assert settings.log_level == "WARNING"
 
 
@@ -156,6 +162,7 @@ def test_production_rejects_weak_or_reused_secrets(
         settings.validate_secrets(
             project_api_key=project_key,
             admin_api_key=admin_key,
+            execution_grant_secret="grant-" + "g" * 32,
         )
 
 
@@ -170,4 +177,44 @@ def test_production_accepts_distinct_strong_secrets():
     settings.validate_secrets(
         project_api_key="project-" + "p" * 32,
         admin_api_key="admin-" + "a" * 32,
+        execution_grant_secret="grant-" + "g" * 32,
     )
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {"REGTRACE_APPROVAL_TTL_SECONDS": "59"},
+        {"REGTRACE_APPROVAL_TTL_SECONDS": "2592001"},
+        {"REGTRACE_EXECUTION_GRANT_TTL_SECONDS": "29"},
+        {"REGTRACE_EXECUTION_GRANT_TTL_SECONDS": "3601"},
+    ],
+)
+def test_runtime_settings_reject_invalid_lifecycle_ttls(environment):
+    with pytest.raises(RuntimeConfigurationError):
+        RuntimeSettings.from_environment(environment)
+
+
+def test_production_requires_strong_distinct_execution_secret():
+    settings = RuntimeSettings(
+        environment="production",
+        trusted_hosts=("api.example.com",),
+        enforce_https=True,
+        expose_docs=False,
+    )
+
+    with pytest.raises(RuntimeConfigurationError):
+        settings.validate_secrets(
+            project_api_key="project-" + "p" * 32,
+            admin_api_key="admin-" + "a" * 32,
+            execution_grant_secret="short",
+        )
+
+    project_secret = "project-" + "p" * 32
+
+    with pytest.raises(RuntimeConfigurationError, match="must be different"):
+        settings.validate_secrets(
+            project_api_key=project_secret,
+            admin_api_key="admin-" + "a" * 32,
+            execution_grant_secret=project_secret,
+        )

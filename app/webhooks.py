@@ -36,6 +36,10 @@ AUDIT_WEBHOOK_EVENT_TYPES: dict[AuditAction, WebhookEventType] = {
     "POLICY_DISABLED": "policy.disabled",
     "POLICY_ROLLED_BACK": "policy.rolled_back",
     "APPROVAL_RESOLVED": "approval.resolved",
+    "APPROVAL_EXPIRED": "approval.expired",
+    "EXECUTION_GRANT_ISSUED": "execution_grant.issued",
+    "EXECUTION_GRANT_CONSUMED": "execution_grant.consumed",
+    "EXECUTION_GRANT_EXPIRED": "execution_grant.expired",
     "WEBHOOK_SUBSCRIPTION_CREATED": (
         "webhook.subscription.created"
     ),
@@ -55,6 +59,7 @@ AUDIT_WEBHOOK_RESOURCE_TYPES: dict[str, WebhookResourceType] = {
     "API_KEY": "API_KEY",
     "POLICY": "POLICY",
     "APPROVAL": "APPROVAL",
+    "EXECUTION_GRANT": "EXECUTION_GRANT",
     "WEBHOOK_SUBSCRIPTION": "WEBHOOK_SUBSCRIPTION",
     "WEBHOOK_DELIVERY": "WEBHOOK_DELIVERY",
 }

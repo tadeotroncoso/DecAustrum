@@ -16,6 +16,9 @@ ADMIN_API_KEY_ENVIRONMENT_VARIABLE = (
 WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE = (
     "REGTRACE_WEBHOOK_MASTER_SECRET"
 )
+EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE = (
+    "REGTRACE_EXECUTION_GRANT_SECRET"
+)
 
 api_key_header = APIKeyHeader(
     name="X-API-Key",
@@ -74,6 +77,26 @@ def get_configured_webhook_master_secret() -> str:
     if len(secret.encode("utf-8")) < 32:
         raise RuntimeError(
             f"{WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE} "
+            "must contain at least 32 bytes."
+        )
+
+    return secret
+
+
+def get_configured_execution_grant_secret() -> str:
+    secret = os.getenv(
+        EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE
+    )
+
+    if not secret:
+        raise RuntimeError(
+            f"{EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE} "
+            "must be configured to issue or consume execution grants."
+        )
+
+    if len(secret.encode("utf-8")) < 32:
+        raise RuntimeError(
+            f"{EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE} "
             "must contain at least 32 bytes."
         )
 

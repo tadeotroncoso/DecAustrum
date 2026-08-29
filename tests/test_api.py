@@ -25,6 +25,9 @@ from uuid import UUID, uuid4
 
 TEST_API_KEY = "test-api-key"
 TEST_ADMIN_API_KEY = "test-admin-api-key"
+TEST_EXECUTION_GRANT_SECRET = (
+    "test-execution-grant-secret-at-least-32-bytes"
+)
 
 client = TestClient(
     app,
@@ -42,6 +45,10 @@ def temporary_evidence_store(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "REGTRACE_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
+    )
+    monkeypatch.setenv(
+        "REGTRACE_EXECUTION_GRANT_SECRET",
+        TEST_EXECUTION_GRANT_SECRET,
     )
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
@@ -525,6 +532,8 @@ def test_require_approval_creates_pending_approval(
     assert approval.decision_id == authorization.decision_id
     assert approval.status == "PENDING"
     assert approval.requested_at == authorization.evaluated_at
+    assert approval.expires_at is not None
+    assert approval.expires_at > approval.requested_at
     assert approval.resolved_at is None
     assert approval.resolved_by is None
 
@@ -682,6 +691,9 @@ def test_approve_pending_request():
     assert data["status"] == "APPROVED"
     assert data["resolved_by"] == "security-admin"
     assert data["resolved_at"] is not None
+    assert data["execution_grant"].startswith("rgt_exec_v1.")
+    assert data["grant_id"]
+    assert data["grant_expires_at"]
 
 
 def test_reject_pending_request():

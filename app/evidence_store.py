@@ -1,6 +1,7 @@
+import secrets
 import sqlite3
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -26,6 +27,19 @@ from app.evidence_models import (
     DecisionSearchFilters,
     EvidenceExportSnapshot,
 )
+from app.exceptions import (
+    ApprovalAlreadyResolvedError,
+    ApprovalExpiredError,
+    ApprovalNotFoundError,
+    ExecutionGrantAlreadyConsumedError,
+    ExecutionGrantExpiredError,
+    ExecutionGrantMismatchError,
+    InvalidExecutionGrantError,
+)
+from app.execution_models import (
+    ExecutionGrantPayload,
+    ExecutionGrantRecord,
+)
 from app.idempotency import IdempotencyRecord
 from app.integrity_models import (
     DecisionIntegrityProof,
@@ -46,6 +60,7 @@ from app.storage.decisions import (
     AuthorizationDecisionRepository,
 )
 from app.storage.evidence import EvidenceRepository
+from app.storage.execution_grants import ExecutionGrantRepository
 from app.storage.idempotency import IdempotencyRepository
 from app.storage.integrity import DecisionIntegrityRepository
 from app.storage.policies import ProjectPolicyRepository
@@ -87,6 +102,9 @@ class EvidenceStore:
             self.database
         )
         self.approvals = ApprovalRepository(self.database)
+        self.execution_grants = ExecutionGrantRepository(
+            self.database
+        )
         self.idempotency = IdempotencyRepository(self.database)
         self.webhooks = WebhookRepository(self.database)
 
@@ -315,6 +333,7 @@ class EvidenceStore:
         limit: int = 20,
         offset: int = 0,
     ) -> list[AuthorizationResponse]:
+        self.expire_due_approvals(project_id=project_id)
         return self.decisions.search(
             project_id=project_id,
             filters=filters,
@@ -328,6 +347,7 @@ class EvidenceStore:
         project_id: UUID,
         filters: DecisionSearchFilters,
     ) -> int:
+        self.expire_due_approvals(project_id=project_id)
         return self.decisions.count_search(
             project_id=project_id,
             filters=filters,
@@ -395,6 +415,7 @@ class EvidenceStore:
         EvidenceExportSnapshot,
         list[VerifiableDecisionRecord],
     ]:
+        self.expire_due_approvals(project_id=project_id)
         return self.evidence_exports.capture_records(
             project_id=project_id,
             filters=filters,
@@ -454,11 +475,59 @@ class EvidenceStore:
     ) -> None:
         self.approvals.save(approval)
 
+    def expire_due_approvals(
+        self,
+        *,
+        project_id: UUID,
+        expired_at: datetime | None = None,
+    ) -> list[ApprovalRecord]:
+        effective_time = expired_at or datetime.now(timezone.utc)
+
+        with self.database.connect() as connection:
+            expired_pairs = (
+                self.approvals.expire_due_with_connection(
+                    connection=connection,
+                    project_id=project_id,
+                    expired_at=effective_time,
+                )
+            )
+
+            for previous, expired in expired_pairs:
+                self._record_administrative_change(
+                    connection,
+                    build_audit_event(
+                        occurred_at=effective_time,
+                        project_id=project_id,
+                        context=AuditContext(
+                            actor_type="SYSTEM",
+                            actor_id="regtrace-expiration",
+                            reason=(
+                                "Approval validity period elapsed."
+                            ),
+                        ),
+                        action="APPROVAL_EXPIRED",
+                        resource_type="APPROVAL",
+                        resource_id=str(expired.decision_id),
+                        before=previous,
+                        after=expired,
+                        metadata={
+                            "expires_at": (
+                                expired.expires_at.isoformat()
+                                if expired.expires_at is not None
+                                else None
+                            ),
+                        },
+                    ),
+                )
+
+        return [current for _, current in expired_pairs]
+
     def get_approval(
         self,
         decision_id: UUID,
         project_id: UUID,
     ) -> ApprovalRecord | None:
+        self.expire_due_approvals(project_id=project_id)
         return self.approvals.get(
             decision_id=decision_id,
             project_id=project_id,
@@ -473,12 +542,26 @@ class EvidenceStore:
         resolved_at: datetime,
         audit_context: AuditContext | None = None,
     ) -> ApprovalRecord:
+        self.expire_due_approvals(
+            project_id=project_id,
+            expired_at=resolved_at,
+        )
+
+        if status == "APPROVED":
+            raise ValueError(
+                "Approvals must be approved with an execution grant."
+            )
+
         with self.database.connect() as connection:
             previous = self.approvals.get_with_connection(
                 connection=connection,
                 decision_id=decision_id,
                 project_id=project_id,
             )
+
+            if previous is not None and previous.status == "EXPIRED":
+                raise ApprovalExpiredError(decision_id)
+
             resolved = self.approvals.resolve_with_connection(
                 connection=connection,
                 decision_id=decision_id,
@@ -506,6 +589,305 @@ class EvidenceStore:
 
             return resolved
 
+    def approve_approval_with_grant(
+        self,
+        *,
+        decision_id: UUID,
+        project_id: UUID,
+        resolved_by: str,
+        resolved_at: datetime,
+        grant: ExecutionGrantRecord,
+        audit_context: AuditContext,
+    ) -> tuple[ApprovalRecord, ExecutionGrantRecord]:
+        self.expire_due_approvals(
+            project_id=project_id,
+            expired_at=resolved_at,
+        )
+
+        if (
+            grant.decision_id != decision_id
+            or grant.project_id != project_id
+        ):
+            raise ValueError(
+                "Execution grant scope must match the approval."
+            )
+
+        with self.database.connect() as connection:
+            previous = self.approvals.get_with_connection(
+                connection=connection,
+                decision_id=decision_id,
+                project_id=project_id,
+            )
+
+            if previous is None:
+                raise ApprovalNotFoundError(decision_id)
+
+            if previous.status == "EXPIRED":
+                raise ApprovalExpiredError(decision_id)
+
+            if previous.status == "APPROVED":
+                existing_grant = (
+                    self.execution_grants
+                    .get_by_decision_with_connection(
+                        connection=connection,
+                        decision_id=decision_id,
+                        project_id=project_id,
+                    )
+                )
+
+                if existing_grant is None:
+                    raise RuntimeError(
+                        "Approved request has no execution grant."
+                    )
+
+                return previous, existing_grant
+
+            if previous.status != "PENDING":
+                raise ApprovalAlreadyResolvedError(
+                    decision_id=decision_id,
+                    current_status=previous.status,
+                )
+
+            authorization = self.decisions.get_with_connection(
+                connection=connection,
+                decision_id=decision_id,
+                project_id=project_id,
+            )
+
+            if (
+                authorization is None
+                or authorization.decision != "REQUIRE_APPROVAL"
+            ):
+                raise RuntimeError(
+                    "Approval references an invalid authorization."
+                )
+
+            self.execution_grants.insert(connection, grant)
+            approved = self.approvals.resolve_with_connection(
+                connection=connection,
+                decision_id=decision_id,
+                project_id=project_id,
+                status="APPROVED",
+                resolved_by=resolved_by,
+                resolved_at=resolved_at,
+            )
+            self._record_administrative_change(
+                connection,
+                build_audit_event(
+                    occurred_at=resolved_at,
+                    project_id=project_id,
+                    context=audit_context,
+                    action="APPROVAL_RESOLVED",
+                    resource_type="APPROVAL",
+                    resource_id=str(decision_id),
+                    before=previous,
+                    after=approved,
+                    metadata={"resolution": "APPROVED"},
+                ),
+            )
+            self._record_administrative_change(
+                connection,
+                build_audit_event(
+                    occurred_at=grant.issued_at,
+                    project_id=project_id,
+                    context=audit_context,
+                    action="EXECUTION_GRANT_ISSUED",
+                    resource_type="EXECUTION_GRANT",
+                    resource_id=str(grant.grant_id),
+                    after=grant,
+                    metadata={
+                        "decision_id": str(decision_id),
+                        "expires_at": grant.expires_at.isoformat(),
+                    },
+                ),
+            )
+
+            return approved, grant
+
+    def get_execution_grant(
+        self,
+        *,
+        grant_id: UUID,
+        project_id: UUID,
+    ) -> ExecutionGrantRecord | None:
+        return self.execution_grants.get(
+            grant_id=grant_id,
+            project_id=project_id,
+        )
+
+    def get_execution_grant_for_decision(
+        self,
+        *,
+        decision_id: UUID,
+        project_id: UUID,
+    ) -> ExecutionGrantRecord | None:
+        return self.execution_grants.get_by_decision(
+            decision_id=decision_id,
+            project_id=project_id,
+        )
+
+    def consume_execution_grant(
+        self,
+        *,
+        payload: ExecutionGrantPayload,
+        project_id: UUID,
+        token_hash: str,
+        request_fingerprint: str,
+        consumed_at: datetime,
+        consumed_by: str,
+        audit_context: AuditContext,
+    ) -> ExecutionGrantRecord:
+        if payload.project_id != project_id:
+            raise InvalidExecutionGrantError()
+
+        expiration_error: ExecutionGrantExpiredError | None = None
+        consumed: ExecutionGrantRecord | None = None
+
+        with self.database.connect() as connection:
+            current = self.execution_grants.get_with_connection(
+                connection=connection,
+                grant_id=payload.grant_id,
+                project_id=project_id,
+            )
+
+            if current is None or not secrets.compare_digest(
+                current.token_hash,
+                token_hash,
+            ):
+                raise InvalidExecutionGrantError()
+
+            if (
+                current.decision_id != payload.decision_id
+                or current.project_id != payload.project_id
+                or current.issued_at != payload.issued_at
+                or current.expires_at != payload.expires_at
+                or not secrets.compare_digest(
+                    current.request_fingerprint,
+                    payload.request_fingerprint,
+                )
+            ):
+                raise InvalidExecutionGrantError()
+
+            if not secrets.compare_digest(
+                current.request_fingerprint,
+                request_fingerprint,
+            ):
+                raise ExecutionGrantMismatchError(
+                    payload.grant_id
+                )
+
+            if current.status == "CONSUMED":
+                raise ExecutionGrantAlreadyConsumedError(
+                    payload.grant_id
+                )
+
+            if current.status == "EXPIRED":
+                raise ExecutionGrantExpiredError(payload.grant_id)
+
+            if current.expires_at <= consumed_at:
+                expired = (
+                    self.execution_grants.expire_with_connection(
+                        connection=connection,
+                        grant_id=payload.grant_id,
+                        project_id=project_id,
+                        expired_at=consumed_at,
+                    )
+                )
+
+                if expired is None:
+                    raise RuntimeError(
+                        "Execution grant expiration failed."
+                    )
+
+                self._record_administrative_change(
+                    connection,
+                    build_audit_event(
+                        occurred_at=consumed_at,
+                        project_id=project_id,
+                        context=AuditContext(
+                            actor_type="SYSTEM",
+                            actor_id="regtrace-expiration",
+                            reason=(
+                                "Execution grant validity period "
+                                "elapsed."
+                            ),
+                        ),
+                        action="EXECUTION_GRANT_EXPIRED",
+                        resource_type="EXECUTION_GRANT",
+                        resource_id=str(payload.grant_id),
+                        before=current,
+                        after=expired,
+                        metadata={
+                            "decision_id": str(payload.decision_id),
+                        },
+                    ),
+                )
+                expiration_error = ExecutionGrantExpiredError(
+                    payload.grant_id
+                )
+            else:
+                consumed = (
+                    self.execution_grants.consume_with_connection(
+                        connection=connection,
+                        grant_id=payload.grant_id,
+                        project_id=project_id,
+                        token_hash=token_hash,
+                        consumed_at=consumed_at,
+                        consumed_by=consumed_by,
+                    )
+                )
+
+                if consumed is None:
+                    latest = (
+                        self.execution_grants.get_with_connection(
+                            connection=connection,
+                            grant_id=payload.grant_id,
+                            project_id=project_id,
+                        )
+                    )
+
+                    if latest is None:
+                        raise InvalidExecutionGrantError()
+
+                    if latest.status == "CONSUMED":
+                        raise ExecutionGrantAlreadyConsumedError(
+                            payload.grant_id
+                        )
+
+                    if latest.status == "EXPIRED":
+                        raise ExecutionGrantExpiredError(
+                            payload.grant_id
+                        )
+
+                    raise RuntimeError(
+                        "Execution grant atomic update failed."
+                    )
+
+                self._record_administrative_change(
+                    connection,
+                    build_audit_event(
+                        occurred_at=consumed_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action="EXECUTION_GRANT_CONSUMED",
+                        resource_type="EXECUTION_GRANT",
+                        resource_id=str(payload.grant_id),
+                        before=current,
+                        after=consumed,
+                        metadata={
+                            "decision_id": str(payload.decision_id),
+                        },
+                    ),
+                )
+
+        if expiration_error is not None:
+            raise expiration_error
+
+        if consumed is None:
+            raise RuntimeError("Execution grant was not consumed.")
+
+        return consumed
+
     def list_approvals(
         self,
         project_id: UUID,
@@ -513,6 +895,7 @@ class EvidenceStore:
         limit: int = 20,
         offset: int = 0,
     ) -> list[ApprovalRecord]:
+        self.expire_due_approvals(project_id=project_id)
         return self.approvals.list(
             project_id=project_id,
             status=status,
@@ -525,6 +908,7 @@ class EvidenceStore:
         project_id: UUID,
         status: ApprovalStatus | None = None,
     ) -> int:
+        self.expire_due_approvals(project_id=project_id)
         return self.approvals.count(
             project_id=project_id,
             status=status,

@@ -25,6 +25,10 @@ def temporary_evidence_store(tmp_path, monkeypatch):
         "REGTRACE_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
+    monkeypatch.setenv(
+        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "test-execution-grant-secret-at-least-32-bytes",
+    )
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
     bootstrap_default_project(

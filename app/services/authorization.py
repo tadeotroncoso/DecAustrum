@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -67,6 +67,7 @@ def authorize_request(
     idempotency_key: str | None,
     project: Project,
     store: EvidenceStore,
+    approval_ttl_seconds: int = 86_400,
 ) -> AuthorizationResponse:
     request_fingerprint = None
 
@@ -128,6 +129,10 @@ def authorize_request(
             decision_id=authorization.decision_id,
             status="PENDING",
             requested_at=authorization.evaluated_at,
+            expires_at=(
+                authorization.evaluated_at
+                + timedelta(seconds=approval_ttl_seconds)
+            ),
         )
 
     idempotency_record = None

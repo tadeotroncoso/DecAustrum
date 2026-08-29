@@ -25,6 +25,47 @@ class ApprovalAlreadyResolvedError(Exception):
         )
 
 
+class ApprovalExpiredError(Exception):
+    def __init__(self, decision_id: UUID) -> None:
+        self.decision_id = decision_id
+
+        super().__init__(
+            f"Approval for decision '{decision_id}' has expired."
+        )
+
+
+class InvalidExecutionGrantError(Exception):
+    def __init__(self) -> None:
+        super().__init__("Execution grant is invalid.")
+
+
+class ExecutionGrantAlreadyConsumedError(Exception):
+    def __init__(self, grant_id: UUID) -> None:
+        self.grant_id = grant_id
+
+        super().__init__(
+            f"Execution grant '{grant_id}' has already been consumed."
+        )
+
+
+class ExecutionGrantExpiredError(Exception):
+    def __init__(self, grant_id: UUID) -> None:
+        self.grant_id = grant_id
+
+        super().__init__(
+            f"Execution grant '{grant_id}' has expired."
+        )
+
+
+class ExecutionGrantMismatchError(Exception):
+    def __init__(self, grant_id: UUID) -> None:
+        self.grant_id = grant_id
+
+        super().__init__(
+            f"Execution grant '{grant_id}' does not match the request."
+        )
+
+
 class InvalidPolicyContextError(Exception):
     def __init__(
         self,

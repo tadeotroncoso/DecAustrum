@@ -180,19 +180,202 @@ CREATE_APPROVAL_REQUESTS_TABLE = """
 CREATE TABLE IF NOT EXISTS approval_requests (
     decision_id TEXT PRIMARY KEY,
     status TEXT NOT NULL CHECK (
-        status IN ('PENDING', 'APPROVED', 'REJECTED')
+        status IN (
+            'PENDING',
+            'APPROVED',
+            'REJECTED',
+            'EXPIRED'
+        )
     ),
     requested_at TEXT NOT NULL,
+    expires_at TEXT,
     resolved_at TEXT,
     resolved_by TEXT,
     FOREIGN KEY (decision_id)
-        REFERENCES authorization_decisions(decision_id)
+        REFERENCES authorization_decisions(decision_id),
+    CHECK (
+        (
+            status = 'PENDING'
+            AND resolved_at IS NULL
+            AND resolved_by IS NULL
+        )
+        OR (
+            status != 'PENDING'
+            AND resolved_at IS NOT NULL
+            AND resolved_by IS NOT NULL
+        )
+    ),
+    CHECK (
+        expires_at IS NULL
+        OR expires_at > requested_at
+    )
 )
 """
 
 CREATE_APPROVAL_REQUESTS_STATUS_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_approval_requests_status
 ON approval_requests (status, requested_at DESC)
+"""
+
+CREATE_APPROVAL_REQUESTS_EXPIRY_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_approval_requests_expiry
+ON approval_requests (status, expires_at)
+"""
+
+CREATE_APPROVAL_LIFECYCLE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS protect_approval_lifecycle
+BEFORE UPDATE ON approval_requests
+WHEN
+    OLD.decision_id IS NOT NEW.decision_id
+    OR OLD.requested_at IS NOT NEW.requested_at
+    OR OLD.expires_at IS NOT NEW.expires_at
+    OR OLD.status != 'PENDING'
+    OR NEW.status NOT IN ('APPROVED', 'REJECTED', 'EXPIRED')
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'approval lifecycle is immutable'
+    );
+END
+"""
+
+CREATE_APPROVAL_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_approval_delete
+BEFORE DELETE ON approval_requests
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'approval requests cannot be deleted'
+    );
+END
+"""
+
+CREATE_EXECUTION_GRANTS_TABLE = """
+CREATE TABLE IF NOT EXISTS execution_grants (
+    grant_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL UNIQUE,
+    project_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN ('ACTIVE', 'CONSUMED', 'EXPIRED')
+    ),
+    request_fingerprint TEXT NOT NULL CHECK (
+        length(request_fingerprint) = 64
+        AND request_fingerprint NOT GLOB '*[^0-9a-f]*'
+    ),
+    token_hash TEXT NOT NULL UNIQUE CHECK (
+        length(token_hash) = 64
+        AND token_hash NOT GLOB '*[^0-9a-f]*'
+    ),
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    consumed_by TEXT,
+    FOREIGN KEY (decision_id)
+        REFERENCES authorization_decisions(decision_id),
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id),
+    CHECK (expires_at > issued_at),
+    CHECK (
+        (
+            status = 'CONSUMED'
+            AND consumed_at IS NOT NULL
+            AND consumed_by IS NOT NULL
+        )
+        OR (
+            status IN ('ACTIVE', 'EXPIRED')
+            AND consumed_at IS NULL
+            AND consumed_by IS NULL
+        )
+    )
+)
+"""
+
+CREATE_EXECUTION_GRANTS_PROJECT_STATUS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_execution_grants_project_status
+ON execution_grants (project_id, status, expires_at)
+"""
+
+CREATE_EXECUTION_GRANT_SCOPE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS enforce_execution_grant_scope
+BEFORE INSERT ON execution_grants
+WHEN
+    NEW.status != 'ACTIVE'
+    OR NOT EXISTS (
+        SELECT 1
+        FROM authorization_decisions
+        WHERE decision_id = NEW.decision_id
+        AND project_id = NEW.project_id
+        AND decision = 'REQUIRE_APPROVAL'
+    )
+    OR NOT EXISTS (
+        SELECT 1
+        FROM approval_requests
+        WHERE decision_id = NEW.decision_id
+        AND status = 'PENDING'
+        AND NEW.issued_at >= requested_at
+        AND (
+            expires_at IS NULL
+            OR NEW.issued_at < expires_at
+        )
+    )
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'execution grant requires a matching pending approval'
+    );
+END
+"""
+
+CREATE_APPROVAL_GRANT_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS require_execution_grant_for_approval
+BEFORE UPDATE OF status ON approval_requests
+WHEN
+    OLD.status = 'PENDING'
+    AND NEW.status = 'APPROVED'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM execution_grants
+        WHERE decision_id = NEW.decision_id
+        AND status = 'ACTIVE'
+    )
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'approved request requires an active execution grant'
+    );
+END
+"""
+
+CREATE_EXECUTION_GRANT_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS protect_execution_grant_lifecycle
+BEFORE UPDATE ON execution_grants
+WHEN
+    OLD.grant_id IS NOT NEW.grant_id
+    OR OLD.decision_id IS NOT NEW.decision_id
+    OR OLD.project_id IS NOT NEW.project_id
+    OR OLD.request_fingerprint IS NOT NEW.request_fingerprint
+    OR OLD.token_hash IS NOT NEW.token_hash
+    OR OLD.issued_at IS NOT NEW.issued_at
+    OR OLD.expires_at IS NOT NEW.expires_at
+    OR OLD.status != 'ACTIVE'
+    OR NEW.status NOT IN ('CONSUMED', 'EXPIRED')
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'execution grant lifecycle is immutable'
+    );
+END
+"""
+
+CREATE_EXECUTION_GRANT_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_execution_grant_delete
+BEFORE DELETE ON execution_grants
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'execution grants cannot be deleted'
+    );
+END
 """
 
 CREATE_IDEMPOTENCY_RECORDS_TABLE = """
@@ -309,6 +492,10 @@ CREATE TABLE IF NOT EXISTS webhook_events (
             'authorization.created',
             'approval.requested',
             'approval.resolved',
+            'approval.expired',
+            'execution_grant.issued',
+            'execution_grant.consumed',
+            'execution_grant.expired',
             'project.created',
             'project.status_changed',
             'api_key.created',
@@ -328,6 +515,7 @@ CREATE TABLE IF NOT EXISTS webhook_events (
         resource_type IN (
             'AUTHORIZATION_DECISION',
             'APPROVAL',
+            'EXECUTION_GRANT',
             'PROJECT',
             'API_KEY',
             'POLICY',
@@ -638,6 +826,10 @@ CREATE TABLE IF NOT EXISTS administrative_audit_events (
             'POLICY_DISABLED',
             'POLICY_ROLLED_BACK',
             'APPROVAL_RESOLVED',
+            'APPROVAL_EXPIRED',
+            'EXECUTION_GRANT_ISSUED',
+            'EXECUTION_GRANT_CONSUMED',
+            'EXECUTION_GRANT_EXPIRED',
             'WEBHOOK_SUBSCRIPTION_CREATED',
             'WEBHOOK_SUBSCRIPTION_DISABLED',
             'WEBHOOK_SECRET_ROTATED',
@@ -650,6 +842,7 @@ CREATE TABLE IF NOT EXISTS administrative_audit_events (
             'API_KEY',
             'POLICY',
             'APPROVAL',
+            'EXECUTION_GRANT',
             'WEBHOOK_SUBSCRIPTION',
             'WEBHOOK_DELIVERY'
         )
@@ -725,6 +918,8 @@ class SQLiteDatabase:
             "projects",
             "authorization_decisions",
             "decision_integrity_records",
+            "approval_requests",
+            "execution_grants",
         }
 
         with self.connect() as connection:
@@ -841,6 +1036,83 @@ class SQLiteDatabase:
         )
 
     @staticmethod
+    def _migrate_approval_requests_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        row = connection.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name = 'approval_requests'
+            """
+        ).fetchone()
+
+        columns = connection.execute(
+            "PRAGMA table_info(approval_requests)"
+        ).fetchall()
+        column_names = {column[1] for column in columns}
+
+        if (
+            row is None
+            or (
+                "expires_at" in column_names
+                and "EXPIRED" in row[0]
+            )
+        ):
+            return
+
+        expires_at_expression = (
+            "expires_at"
+            if "expires_at" in column_names
+            else "NULL"
+        )
+        for trigger_name in (
+            "protect_approval_lifecycle",
+            "prevent_approval_delete",
+            "require_execution_grant_for_approval",
+        ):
+            connection.execute(
+                f"DROP TRIGGER IF EXISTS {trigger_name}"
+            )
+        connection.execute(
+            "DROP INDEX IF EXISTS idx_approval_requests_status"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS idx_approval_requests_expiry"
+        )
+        connection.execute(
+            """
+            ALTER TABLE approval_requests
+            RENAME TO legacy_approval_requests
+            """
+        )
+        connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
+        connection.execute(
+            f"""
+            INSERT INTO approval_requests (
+                decision_id,
+                status,
+                requested_at,
+                expires_at,
+                resolved_at,
+                resolved_by
+            )
+            SELECT
+                decision_id,
+                status,
+                requested_at,
+                {expires_at_expression},
+                resolved_at,
+                resolved_by
+            FROM legacy_approval_requests
+            """
+        )
+        connection.execute(
+            "DROP TABLE legacy_approval_requests"
+        )
+
+    @staticmethod
     def _migrate_idempotency_records_table(
         connection: sqlite3.Connection,
     ) -> None:
@@ -922,7 +1194,7 @@ class SQLiteDatabase:
 
         if (
             row is None
-            or "WEBHOOK_SUBSCRIPTION_CREATED" in row[0]
+            or "EXECUTION_GRANT_CONSUMED" in row[0]
         ):
             return
 
@@ -988,6 +1260,101 @@ class SQLiteDatabase:
         )
 
     @staticmethod
+    def _migrate_webhook_events_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        row = connection.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name = 'webhook_events'
+            """
+        ).fetchone()
+
+        if (
+            row is None
+            or "execution_grant.issued" in row[0]
+        ):
+            return
+
+        trigger_names = (
+            "prevent_webhook_event_update",
+            "prevent_webhook_event_delete",
+            "enforce_webhook_delivery_project",
+            "protect_webhook_delivery_identity",
+            "prevent_webhook_deliveries_delete",
+            "prevent_webhook_attempt_update",
+            "prevent_webhook_attempt_delete",
+        )
+        index_names = (
+            "idx_webhook_events_project",
+            "idx_webhook_deliveries_due",
+            "idx_webhook_deliveries_project",
+            "idx_webhook_delivery_attempts_delivery",
+        )
+
+        for trigger_name in trigger_names:
+            connection.execute(
+                f"DROP TRIGGER IF EXISTS {trigger_name}"
+            )
+
+        for index_name in index_names:
+            connection.execute(
+                f"DROP INDEX IF EXISTS {index_name}"
+            )
+
+        connection.execute(
+            """
+            ALTER TABLE webhook_delivery_attempts
+            RENAME TO legacy_webhook_delivery_attempts
+            """
+        )
+        connection.execute(
+            """
+            ALTER TABLE webhook_deliveries
+            RENAME TO legacy_webhook_deliveries
+            """
+        )
+        connection.execute(
+            """
+            ALTER TABLE webhook_events
+            RENAME TO legacy_webhook_events
+            """
+        )
+
+        connection.execute(CREATE_WEBHOOK_EVENTS_TABLE)
+        connection.execute(CREATE_WEBHOOK_DELIVERIES_TABLE)
+        connection.execute(CREATE_WEBHOOK_DELIVERY_ATTEMPTS_TABLE)
+        connection.execute(
+            """
+            INSERT INTO webhook_events
+            SELECT * FROM legacy_webhook_events
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO webhook_deliveries
+            SELECT * FROM legacy_webhook_deliveries
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO webhook_delivery_attempts
+            SELECT * FROM legacy_webhook_delivery_attempts
+            """
+        )
+        connection.execute(
+            "DROP TABLE legacy_webhook_delivery_attempts"
+        )
+        connection.execute(
+            "DROP TABLE legacy_webhook_deliveries"
+        )
+        connection.execute(
+            "DROP TABLE legacy_webhook_events"
+        )
+
+    @staticmethod
     def _backfill_project_policy_versions(
         connection: sqlite3.Connection,
     ) -> None:
@@ -1038,6 +1405,7 @@ class SQLiteDatabase:
                 CREATE_WEBHOOK_SUBSCRIPTIONS_DELETE_TRIGGER
             )
             connection.execute(CREATE_WEBHOOK_EVENTS_TABLE)
+            self._migrate_webhook_events_table(connection)
             connection.execute(CREATE_WEBHOOK_EVENTS_INDEX)
             connection.execute(
                 CREATE_WEBHOOK_EVENTS_UPDATE_TRIGGER
@@ -1144,8 +1512,28 @@ class SQLiteDatabase:
                 CREATE_DECISION_INTEGRITY_DELETE_TRIGGER
             )
             connection.execute(CREATE_APPROVAL_REQUESTS_TABLE)
+            self._migrate_approval_requests_table(connection)
             connection.execute(
                 CREATE_APPROVAL_REQUESTS_STATUS_INDEX
+            )
+            connection.execute(
+                CREATE_APPROVAL_REQUESTS_EXPIRY_INDEX
+            )
+            connection.execute(CREATE_APPROVAL_LIFECYCLE_TRIGGER)
+            connection.execute(CREATE_APPROVAL_DELETE_TRIGGER)
+            connection.execute(CREATE_EXECUTION_GRANTS_TABLE)
+            connection.execute(
+                CREATE_EXECUTION_GRANTS_PROJECT_STATUS_INDEX
+            )
+            connection.execute(
+                CREATE_EXECUTION_GRANT_SCOPE_TRIGGER
+            )
+            connection.execute(CREATE_APPROVAL_GRANT_TRIGGER)
+            connection.execute(
+                CREATE_EXECUTION_GRANT_UPDATE_TRIGGER
+            )
+            connection.execute(
+                CREATE_EXECUTION_GRANT_DELETE_TRIGGER
             )
             connection.execute(CREATE_IDEMPOTENCY_RECORDS_TABLE)
 

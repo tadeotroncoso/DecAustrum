@@ -64,6 +64,10 @@ def temporary_evidence_store(tmp_path, monkeypatch):
         "REGTRACE_WEBHOOK_MASTER_SECRET",
         TEST_MASTER_SECRET,
     )
+    monkeypatch.setenv(
+        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "test-execution-grant-secret-at-least-32-bytes",
+    )
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
     bootstrap_default_project(

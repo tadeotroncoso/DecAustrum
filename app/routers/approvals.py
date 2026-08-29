@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.approval_models import (
+    ApprovalGrantResponse,
     ApprovalRecord,
     ApprovalRequestPage,
     ApprovalResolutionRequest,
@@ -11,10 +12,16 @@ from app.approval_models import (
 from app.dependencies import (
     get_authenticated_project,
     get_evidence_store,
+    get_execution_grant_secret,
+    get_runtime_settings,
 )
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
-from app.services.approvals import resolve_approval_request
+from app.runtime_config import RuntimeSettings
+from app.services.approvals import (
+    approve_approval_request,
+    resolve_approval_request,
+)
 
 
 router = APIRouter()
@@ -82,7 +89,7 @@ def get_approval_request(
 
 @router.post(
     "/v1/approvals/{decision_id}/approve",
-    response_model=ApprovalRecord,
+    response_model=ApprovalGrantResponse,
 )
 def approve_request(
     decision_id: UUID,
@@ -91,13 +98,20 @@ def approve_request(
         get_authenticated_project
     ),
     store: EvidenceStore = Depends(get_evidence_store),
-) -> ApprovalRecord:
-    return resolve_approval_request(
+    execution_grant_secret: str = Depends(
+        get_execution_grant_secret
+    ),
+    settings: RuntimeSettings = Depends(get_runtime_settings),
+) -> ApprovalGrantResponse:
+    return approve_approval_request(
         decision_id=decision_id,
         resolution=resolution,
-        status="APPROVED",
         project_id=project.project_id,
         store=store,
+        execution_grant_secret=execution_grant_secret,
+        execution_grant_ttl_seconds=(
+            settings.execution_grant_ttl_seconds
+        ),
     )
 
 

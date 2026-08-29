@@ -232,7 +232,7 @@ def test_prepared_export_keeps_approval_filter_snapshot_stable(
     store.resolve_approval(
         decision_id=records[1].decision_id,
         project_id=FIRST_PROJECT_ID,
-        status="APPROVED",
+        status="REJECTED",
         resolved_by="security-admin",
         resolved_at=records[1].evaluated_at + timedelta(minutes=1),
     )

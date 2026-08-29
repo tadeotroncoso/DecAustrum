@@ -18,6 +18,7 @@ from app.security import (
     authenticate_admin,
     authenticate_project,
     get_configured_admin_api_key,
+    get_configured_execution_grant_secret,
 )
 from app.webhooks import (
     UrllibWebhookTransport,
@@ -44,6 +45,10 @@ def get_metrics_registry(request: Request) -> MetricsRegistry:
 
 def get_runtime_settings(request: Request) -> RuntimeSettings:
     return request.app.state.runtime_settings
+
+
+def get_execution_grant_secret() -> str:
+    return get_configured_execution_grant_secret()
 
 
 def get_authenticated_project(

@@ -21,15 +21,15 @@ routers. It must not contain endpoint or persistence logic.
 - delegation to application services or repositories.
 
 Routers are grouped by domain: administration, administrative audit, policies,
-authorization, decisions, evidence export, approvals, transactional webhooks,
-and health.
+authorization, decisions, evidence export, approvals, execution grants,
+transactional webhooks, and health.
 
 ### Application services
 
 `app/services/` coordinates complete use cases that involve validation,
 multiple models, or multiple persistence operations. Examples include issuing
-a project API key, evaluating an authorization request, and resolving an
-approval.
+a project API key, evaluating an authorization request, resolving an approval,
+and consuming its execution grant.
 
 ### Dependency wiring
 
@@ -41,8 +41,9 @@ the store through FastAPI's dependency override mechanism.
 
 The policy engine and Pydantic models remain independent from FastAPI and
 SQLite. They define policy evaluation, decision priority, evidence, traces,
-projects, API keys, approvals, administrative audit events, and authorization
-responses.
+projects, API keys, approvals, execution grants, administrative audit events,
+and authorization responses. Execution-grant signing is independent from HTTP
+and SQLite persistence.
 
 ### Persistence
 
@@ -56,6 +57,7 @@ responses.
 - `evidence.py`;
 - `integrity.py`;
 - `approvals.py`;
+- `execution_grants.py`;
 - `idempotency.py`;
 - `webhooks.py`.
 
@@ -76,17 +78,59 @@ several repositories.
 6. Decision, integrity proof, approval, idempotency record, immutable webhook
    events, and matching delivery rows are persisted in one transaction.
 
+## Closed approval and execution flow
+
+A `REQUIRE_APPROVAL` decision is not executable merely because its approval
+row becomes `APPROVED`. The complete state machine is:
+
+```text
+PENDING -> REJECTED
+PENDING -> EXPIRED
+PENDING -> APPROVED + ACTIVE grant
+                       |-> CONSUMED
+                       `-> EXPIRED
+```
+
+New approval requests receive a UTC `expires_at`. A lazy transactional sweep
+runs before approval reads, searches, exports, and resolution; due requests
+are durably changed to `EXPIRED` and emit immutable audit and webhook events.
+Legacy rows with no expiry remain readable and non-expiring.
+
+Approval creates a version-1 HMAC-SHA-256 execution grant bound to the exact
+project, decision, agent, action, and context through a canonical SHA-256
+request fingerprint. The signed bearer token contains UUIDs, the fingerprint,
+and issue/expiry times, but no authorization context. SQLite stores only the
+token hash and grant claims. The plaintext token is returned only by the
+approval response and can be deterministically regenerated for an idempotent
+retry while it remains active.
+
+`POST /v1/execution-grants/consume` verifies the signature, tenant, immutable
+decision fingerprint, presented request fingerprint, stored token hash,
+status, and expiry. One conditional SQLite update changes `ACTIVE` to
+`CONSUMED`; a replay receives a conflict. A changed request receives a mismatch
+conflict without consuming the grant, while malformed, forged, unknown, and
+cross-project tokens all receive the same generic unauthorized response.
+
+Database checks and triggers enforce the state machine independently of the
+service layer. They prevent approval without an active matching grant,
+out-of-window grant issuance, terminal approval rewrites, grant identity
+changes, replay transitions, and deletion of either lifecycle record.
+
 ## Transaction boundaries
 
-Two multi-domain operations are intentionally owned by `EvidenceStore`:
+Multi-domain operations intentionally owned by `EvidenceStore` include:
 
 - provisioning a project with its first API key and policy templates;
 - persisting an authorization with its integrity proof, optional approval, and
-  idempotency record.
+  idempotency record;
+- approving a request with its execution grant, audit events, webhook events,
+  and matching deliveries;
+- consuming or expiring a grant with its audit and transactional outbox event.
 
 Administrative mutations are also coordinated there so the state change and
 its audit event commit or roll back together. This covers project lifecycle,
-API-key lifecycle, policy configuration and rollback, and approval resolution.
+API-key lifecycle, policy configuration and rollback, approval resolution and
+expiry, and execution-grant issuance, consumption, and expiry.
 The same boundary appends the corresponding webhook event and materializes one
 delivery for every active matching subscription. An outbox failure therefore
 rolls back the business mutation and its audit event rather than silently
@@ -127,10 +171,14 @@ successful effective mutation records:
 - JSON snapshots of the state before and after the mutation;
 - action-specific metadata such as policy versions or approval resolution.
 
+Execution-grant audit snapshots deliberately exclude token hashes and request
+fingerprints.
+
 The recorded actions are project creation and status changes, API-key creation
-and revocation, policy creation, update, disable and rollback, and approval
-resolution. Initial project templates and default-project bootstrap operations
-are attributed to `regtrace-bootstrap` as a `SYSTEM` actor.
+and revocation, policy creation, update, disable and rollback, approval
+resolution or expiry, and execution-grant issuance, consumption, or expiry.
+Initial project templates and default-project bootstrap operations are
+attributed to `regtrace-bootstrap` as a `SYSTEM` actor.
 
 Administrative API clients can identify the operator with `X-Admin-Actor` and
 provide a ticket or explanation with `X-Audit-Reason`. Existing clients remain
@@ -173,7 +221,9 @@ belong to later production hardening.
 emits these version-1 event types:
 
 - `authorization.created`;
-- `approval.requested` and `approval.resolved`;
+- `approval.requested`, `approval.resolved`, and `approval.expired`;
+- `execution_grant.issued`, `execution_grant.consumed`, and
+  `execution_grant.expired`;
 - `project.created` and `project.status_changed`;
 - `api_key.created` and `api_key.revoked`;
 - `policy.created`, `policy.updated`, `policy.disabled`, and

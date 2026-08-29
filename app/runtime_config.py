@@ -98,6 +98,8 @@ class RuntimeSettings:
     authorization_rate_limit: int = 300
     tenant_rate_limit: int = 600
     admin_rate_limit: int = 300
+    approval_ttl_seconds: int = 86_400
+    execution_grant_ttl_seconds: int = 300
     log_level: str = "INFO"
 
     def __post_init__(self) -> None:
@@ -186,6 +188,20 @@ class RuntimeSettings:
                 minimum=1,
                 maximum=1_000_000,
             ),
+            approval_ttl_seconds=_parse_int(
+                values,
+                "REGTRACE_APPROVAL_TTL_SECONDS",
+                86_400,
+                minimum=60,
+                maximum=2_592_000,
+            ),
+            execution_grant_ttl_seconds=_parse_int(
+                values,
+                "REGTRACE_EXECUTION_GRANT_TTL_SECONDS",
+                300,
+                minimum=30,
+                maximum=3_600,
+            ),
             log_level=values.get(
                 "REGTRACE_LOG_LEVEL",
                 "INFO",
@@ -259,11 +275,31 @@ class RuntimeSettings:
                 self.admin_rate_limit,
                 1_000_000,
             ),
+            (
+                "approval_ttl_seconds",
+                self.approval_ttl_seconds,
+                2_592_000,
+            ),
+            (
+                "execution_grant_ttl_seconds",
+                self.execution_grant_ttl_seconds,
+                3_600,
+            ),
         ):
             if value < 1 or value > maximum:
                 raise RuntimeConfigurationError(
                     f"{name} must be between 1 and {maximum}."
                 )
+
+        if not 60 <= self.approval_ttl_seconds <= 2_592_000:
+            raise RuntimeConfigurationError(
+                "approval_ttl_seconds must be between 60 and 2592000."
+            )
+
+        if not 30 <= self.execution_grant_ttl_seconds <= 3_600:
+            raise RuntimeConfigurationError(
+                "execution_grant_ttl_seconds must be between 30 and 3600."
+            )
 
         if self.log_level not in logging.getLevelNamesMapping():
             raise RuntimeConfigurationError(
@@ -304,6 +340,7 @@ class RuntimeSettings:
         *,
         project_api_key: str,
         admin_api_key: str | None,
+        execution_grant_secret: str | None = None,
     ) -> None:
         if self.environment != "production":
             return
@@ -328,6 +365,30 @@ class RuntimeSettings:
         if secrets.compare_digest(project_api_key, admin_api_key):
             raise RuntimeConfigurationError(
                 "Project and administrator API keys must be different."
+            )
+
+        if execution_grant_secret is None:
+            raise RuntimeConfigurationError(
+                "REGTRACE_EXECUTION_GRANT_SECRET must be configured "
+                "in production."
+            )
+
+        if len(execution_grant_secret.encode("utf-8")) < 32:
+            raise RuntimeConfigurationError(
+                "REGTRACE_EXECUTION_GRANT_SECRET must contain at "
+                "least 32 bytes in production."
+            )
+
+        if secrets.compare_digest(
+            execution_grant_secret,
+            project_api_key,
+        ) or secrets.compare_digest(
+            execution_grant_secret,
+            admin_api_key,
+        ):
+            raise RuntimeConfigurationError(
+                "Execution grant, project, and administrator secrets "
+                "must be different."
             )
 
 

@@ -326,6 +326,7 @@ def test_initialize_creates_approval_requests_table(
         "decision_id",
         "status",
         "requested_at",
+        "expires_at",
         "resolved_at",
         "resolved_by",
     }
@@ -401,7 +402,7 @@ def test_combined_save_rolls_back_on_mismatched_approval(
         project_id=authorization.project_id,
     ) is None
 
-def test_resolve_pending_approval(tmp_path):
+def test_reject_pending_approval(tmp_path):
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
 
@@ -425,12 +426,12 @@ def test_resolve_pending_approval(tmp_path):
     resolved = store.resolve_approval(
         decision_id=approval.decision_id,
         project_id=authorization.project_id,
-        status="APPROVED",
+        status="REJECTED",
         resolved_by="security-admin",
         resolved_at=resolved_at,
     )
 
-    assert resolved.status == "APPROVED"
+    assert resolved.status == "REJECTED"
     assert resolved.resolved_by == "security-admin"
     assert resolved.resolved_at == resolved_at
 
@@ -455,7 +456,7 @@ def test_cannot_resolve_approval_twice(tmp_path):
     store.resolve_approval(
         decision_id=approval.decision_id,
         project_id=authorization.project_id,
-        status="APPROVED",
+        status="REJECTED",
         resolved_by="first-admin",
         resolved_at=approval.requested_at,
     )
@@ -477,7 +478,7 @@ def test_resolve_unknown_approval_fails(tmp_path):
     with pytest.raises(ApprovalNotFoundError):
         store.resolve_approval(
             decision_id=uuid4(),
-            status="APPROVED",
+            status="REJECTED",
             resolved_by="security-admin",
             resolved_at=datetime.now(timezone.utc),
             project_id=DEFAULT_PROJECT_ID,
@@ -506,7 +507,7 @@ def test_approval_resolution_is_scoped_to_project(
         store.resolve_approval(
             decision_id=approval.decision_id,
             project_id=uuid4(),
-            status="APPROVED",
+            status="REJECTED",
             resolved_by="wrong-project-admin",
             resolved_at=datetime.now(timezone.utc),
         )

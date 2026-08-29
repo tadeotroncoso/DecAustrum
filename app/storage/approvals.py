@@ -9,6 +9,7 @@ from app.approval_models import (
 )
 from app.exceptions import (
     ApprovalAlreadyResolvedError,
+    ApprovalExpiredError,
     ApprovalNotFoundError,
 )
 from app.storage.database import SQLiteDatabase
@@ -27,6 +28,7 @@ class ApprovalRepository:
                 "decision_id": row["decision_id"],
                 "status": row["status"],
                 "requested_at": row["requested_at"],
+                "expires_at": row["expires_at"],
                 "resolved_at": row["resolved_at"],
                 "resolved_by": row["resolved_by"],
             }
@@ -43,15 +45,21 @@ class ApprovalRepository:
                 decision_id,
                 status,
                 requested_at,
+                expires_at,
                 resolved_at,
                 resolved_by
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 str(approval.decision_id),
                 approval.status,
                 approval.requested_at.isoformat(),
+                (
+                    approval.expires_at.isoformat()
+                    if approval.expires_at is not None
+                    else None
+                ),
                 (
                     approval.resolved_at.isoformat()
                     if approval.resolved_at is not None
@@ -125,6 +133,10 @@ class ApprovalRepository:
                 resolved_by = ?
             WHERE decision_id = ?
             AND status = 'PENDING'
+            AND (
+                expires_at IS NULL
+                OR expires_at > ?
+            )
             AND EXISTS (
                 SELECT 1
                 FROM authorization_decisions
@@ -138,6 +150,7 @@ class ApprovalRepository:
                 resolved_at.isoformat(),
                 resolved_by,
                 str(decision_id),
+                resolved_at.isoformat(),
                 str(project_id),
             ),
         )
@@ -151,6 +164,13 @@ class ApprovalRepository:
 
             if current_approval is None:
                 raise ApprovalNotFoundError(decision_id)
+
+            if (
+                current_approval.status == "PENDING"
+                and current_approval.expires_at is not None
+                and current_approval.expires_at <= resolved_at
+            ):
+                raise ApprovalExpiredError(decision_id)
 
             raise ApprovalAlreadyResolvedError(
                 decision_id=decision_id,
@@ -167,6 +187,74 @@ class ApprovalRepository:
             raise ApprovalNotFoundError(decision_id)
 
         return resolved
+
+    @classmethod
+    def expire_due_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        project_id: UUID,
+        expired_at: datetime,
+        resolved_by: str = "regtrace-expiration",
+    ) -> list[tuple[ApprovalRecord, ApprovalRecord]]:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT approval_requests.*
+            FROM approval_requests
+            JOIN authorization_decisions
+                ON authorization_decisions.decision_id
+                = approval_requests.decision_id
+            WHERE authorization_decisions.project_id = ?
+            AND approval_requests.status = 'PENDING'
+            AND approval_requests.expires_at IS NOT NULL
+            AND approval_requests.expires_at <= ?
+            ORDER BY approval_requests.expires_at,
+                     approval_requests.decision_id
+            """,
+            (
+                str(project_id),
+                expired_at.isoformat(),
+            ),
+        ).fetchall()
+        expired: list[
+            tuple[ApprovalRecord, ApprovalRecord]
+        ] = []
+
+        for row in rows:
+            previous = cls._row_to_approval(row)
+            result = connection.execute(
+                """
+                UPDATE approval_requests
+                SET
+                    status = 'EXPIRED',
+                    resolved_at = ?,
+                    resolved_by = ?
+                WHERE decision_id = ?
+                AND status = 'PENDING'
+                AND expires_at IS NOT NULL
+                AND expires_at <= ?
+                """,
+                (
+                    expired_at.isoformat(),
+                    resolved_by,
+                    str(previous.decision_id),
+                    expired_at.isoformat(),
+                ),
+            )
+
+            if result.rowcount == 0:
+                continue
+
+            current = cls.get_with_connection(
+                connection=connection,
+                decision_id=previous.decision_id,
+                project_id=project_id,
+            )
+
+            if current is not None:
+                expired.append((previous, current))
+
+        return expired
 
     def resolve(
         self,

@@ -11,6 +11,7 @@ from app.project_models import Project
 from app.security import (
     authenticate_admin,
     authenticate_project,
+    get_configured_execution_grant_secret,
 )
 
 
@@ -110,3 +111,30 @@ def test_authenticate_admin_rejects_invalid_key(
             "A valid admin API key is required."
         ),
     }
+
+
+def test_execution_grant_secret_must_be_configured(monkeypatch):
+    monkeypatch.delenv(
+        "REGTRACE_EXECUTION_GRANT_SECRET",
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="must be configured"):
+        get_configured_execution_grant_secret()
+
+
+def test_execution_grant_secret_must_be_strong(monkeypatch):
+    monkeypatch.setenv(
+        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "short",
+    )
+
+    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+        get_configured_execution_grant_secret()
+
+
+def test_execution_grant_secret_is_returned(monkeypatch):
+    secret = "configured-execution-grant-secret-at-least-32-bytes"
+    monkeypatch.setenv("REGTRACE_EXECUTION_GRANT_SECRET", secret)
+
+    assert get_configured_execution_grant_secret() == secret

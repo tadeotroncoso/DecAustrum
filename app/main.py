@@ -36,6 +36,7 @@ from app.routers import (
     authorization,
     decisions,
     evidence,
+    execution_grants,
     health,
     integrity,
     observability,
@@ -44,6 +45,7 @@ from app.routers import (
 from app.runtime_config import RuntimeSettings
 from app.security import (
     ADMIN_API_KEY_ENVIRONMENT_VARIABLE,
+    EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE,
     get_configured_api_key,
 )
 
@@ -78,6 +80,9 @@ async def lifespan(application: FastAPI):
             project_api_key=api_key,
             admin_api_key=os.getenv(
                 ADMIN_API_KEY_ENVIRONMENT_VARIABLE
+            ),
+            execution_grant_secret=os.getenv(
+                EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE
             ),
         )
         policy_templates = load_policies(POLICIES_DIRECTORY)
@@ -165,6 +170,7 @@ def create_app(
     application.include_router(evidence.router)
     application.include_router(integrity.router)
     application.include_router(approvals.router)
+    application.include_router(execution_grants.router)
 
     return application
 

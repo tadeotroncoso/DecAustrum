@@ -108,31 +108,43 @@ class AuthorizationDecisionRepository:
             }
         )
 
+    @classmethod
+    def get_with_connection(
+        cls,
+        connection: sqlite3.Connection,
+        decision_id: UUID,
+        project_id: UUID,
+    ) -> AuthorizationResponse | None:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT *
+            FROM authorization_decisions
+            WHERE decision_id = ?
+            AND project_id = ?
+            """,
+            (
+                str(decision_id),
+                str(project_id),
+            ),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return cls._row_to_authorization(row)
+
     def get(
         self,
         decision_id: UUID,
         project_id: UUID,
     ) -> AuthorizationResponse | None:
         with self.database.connect() as connection:
-            connection.row_factory = sqlite3.Row
-
-            row = connection.execute(
-                """
-                SELECT *
-                FROM authorization_decisions
-                WHERE decision_id = ?
-                AND project_id = ?
-                """,
-                (
-                    str(decision_id),
-                    str(project_id),
-                ),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        return self._row_to_authorization(row)
+            return self.get_with_connection(
+                connection=connection,
+                decision_id=decision_id,
+                project_id=project_id,
+            )
 
     @staticmethod
     def _search_where(
