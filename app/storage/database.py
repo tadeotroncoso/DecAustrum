@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS projects (
     status TEXT NOT NULL CHECK (
         status IN ('ACTIVE', 'DISABLED')
     ),
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 )
 """
 
@@ -102,6 +103,37 @@ class SQLiteDatabase:
         connection = sqlite3.connect(self.database_path)
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
+
+    @staticmethod
+    def _migrate_projects_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        columns = connection.execute(
+            "PRAGMA table_info(projects)"
+        ).fetchall()
+
+        column_names = {
+            column[1]
+            for column in columns
+        }
+
+        if "updated_at" in column_names:
+            return
+
+        connection.execute(
+            """
+            ALTER TABLE projects
+            ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''
+            """
+        )
+
+        connection.execute(
+            """
+            UPDATE projects
+            SET updated_at = created_at
+            WHERE updated_at = ''
+            """
+        )
 
     @staticmethod
     def _migrate_decisions_table(
@@ -209,6 +241,7 @@ class SQLiteDatabase:
 
         with self.connect() as connection:
             connection.execute(CREATE_PROJECTS_TABLE)
+            self._migrate_projects_table(connection)
             connection.execute(CREATE_PROJECT_API_KEYS_TABLE)
             connection.execute(CREATE_PROJECT_POLICIES_TABLE)
             connection.execute(CREATE_PROJECT_POLICIES_INDEX)

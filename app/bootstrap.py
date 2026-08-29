@@ -50,6 +50,7 @@ def bootstrap_default_project(
             name=DEFAULT_PROJECT_NAME,
             status="ACTIVE",
             created_at=timestamp,
+            updated_at=timestamp,
         )
 
         store.save_project_with_api_key(

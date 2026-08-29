@@ -80,6 +80,20 @@ If any write fails, SQLite rolls back the complete operation. Domain
 repositories expose connection-aware insert methods only for these coordinated
 transactions.
 
+## Project lifecycle invariants
+
+Administrators can list, inspect, suspend, and reactivate managed projects.
+Project status transitions follow these rules:
+
+- repeating the current status is idempotent and preserves `updated_at`;
+- a real status transition updates `updated_at` but never `created_at`;
+- disabled projects cannot authenticate or receive additional API keys;
+- reactivation restores access through non-revoked keys only;
+- revoked keys remain revoked after any project transition;
+- the default system project cannot be disabled through the administration API.
+
+All project listing and lifecycle routes require the administrator API key.
+
 ## Dependency direction
 
 Dependencies flow inward:

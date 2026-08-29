@@ -17,7 +17,7 @@ from app.policy_models import (
     Policy,
     ProjectPolicyConfiguration,
 )
-from app.project_models import Project
+from app.project_models import Project, ProjectStatus
 from app.storage.api_keys import ProjectApiKeyRepository
 from app.storage.approvals import ApprovalRepository
 from app.storage.database import SQLiteDatabase
@@ -58,6 +58,36 @@ class EvidenceStore:
         project_id: UUID,
     ) -> Project | None:
         return self.projects.get(project_id)
+
+    def list_projects(
+        self,
+        status: ProjectStatus | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[Project]:
+        return self.projects.list(
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_projects(
+        self,
+        status: ProjectStatus | None = None,
+    ) -> int:
+        return self.projects.count(status=status)
+
+    def update_project_status(
+        self,
+        project_id: UUID,
+        status: ProjectStatus,
+        updated_at: datetime,
+    ) -> Project | None:
+        return self.projects.update_status(
+            project_id=project_id,
+            status=status,
+            updated_at=updated_at,
+        )
 
     def save(
         self,

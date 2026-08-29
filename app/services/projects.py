@@ -14,9 +14,11 @@ from app.api_keys import (
 from app.evidence_store import EvidenceStore
 from app.policy_models import Policy
 from app.project_models import (
+    DEFAULT_PROJECT_ID,
     Project,
     ProjectCreateRequest,
     ProjectProvisioningResponse,
+    ProjectStatus,
 )
 
 
@@ -52,6 +54,7 @@ def create_project(
         name=request.name,
         status="ACTIVE",
         created_at=created_at,
+        updated_at=created_at,
     )
 
     api_key = generate_project_api_key()
@@ -121,6 +124,45 @@ def create_project_api_key(
         key=metadata,
         api_key=api_key,
     )
+
+
+def change_project_status(
+    project_id: UUID,
+    status: ProjectStatus,
+    store: EvidenceStore,
+) -> Project:
+    if (
+        project_id == DEFAULT_PROJECT_ID
+        and status == "DISABLED"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "default_project_protected",
+                "message": (
+                    "The default project cannot be disabled."
+                ),
+            },
+        )
+
+    project = store.update_project_status(
+        project_id=project_id,
+        status=status,
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "project_not_found",
+                "message": (
+                    f"Project '{project_id}' was not found."
+                ),
+            },
+        )
+
+    return project
 
 
 def revoke_api_key(

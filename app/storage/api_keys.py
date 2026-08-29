@@ -169,7 +169,8 @@ class ProjectApiKeyRepository:
                     projects.project_id,
                     projects.name,
                     projects.status,
-                    projects.created_at
+                    projects.created_at,
+                    projects.updated_at
                 FROM projects
                 INNER JOIN project_api_keys
                     ON project_api_keys.project_id
@@ -190,5 +191,6 @@ class ProjectApiKeyRepository:
                 "name": row["name"],
                 "status": row["status"],
                 "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
             }
         )

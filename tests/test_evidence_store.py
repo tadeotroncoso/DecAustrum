@@ -867,6 +867,7 @@ def test_initialize_creates_projects_table(tmp_path):
         "name",
         "status",
         "created_at",
+        "updated_at",
     }
 
 
@@ -885,14 +886,16 @@ def test_projects_table_rejects_invalid_status(
                     project_id,
                     name,
                     status,
-                    created_at
+                    created_at,
+                    updated_at
                 )
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     str(uuid4()),
                     "Invalid Project",
                     "UNKNOWN",
+                    "2026-08-28T10:00:00+00:00",
                     "2026-08-28T10:00:00+00:00",
                 ),
             )
@@ -926,6 +929,9 @@ def test_save_project_persists_project(tmp_path):
     assert row["created_at"] == (
         project.created_at.isoformat()
     )
+    assert row["updated_at"] == (
+        project.updated_at.isoformat()
+    )
 
 
 def test_get_project_returns_saved_project(tmp_path):
@@ -953,6 +959,175 @@ def test_get_project_returns_none_when_unknown(
     loaded_project = store.get_project(uuid4())
 
     assert loaded_project is None
+
+
+def test_initialize_migrates_legacy_projects_table(
+    tmp_path,
+):
+    database_path = tmp_path / "legacy.db"
+    project_id = uuid4()
+    created_at = "2026-08-28T10:00:00+00:00"
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE projects (
+                project_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO projects (
+                project_id,
+                name,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                str(project_id),
+                "Legacy Project",
+                "ACTIVE",
+                created_at,
+            ),
+        )
+
+    store = EvidenceStore(database_path)
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE project_id = ?
+            """,
+            (str(project_id),),
+        ).fetchone()
+
+    assert row is not None
+    assert row["updated_at"] == created_at
+    assert store.get_project(project_id) is not None
+
+
+def test_list_and_count_projects_support_status_filter(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    base_time = datetime(
+        2026,
+        8,
+        28,
+        10,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    first = Project(
+        project_id=uuid4(),
+        name="First",
+        status="ACTIVE",
+        created_at=base_time,
+    )
+    second = Project(
+        project_id=uuid4(),
+        name="Second",
+        status="DISABLED",
+        created_at=base_time + timedelta(minutes=1),
+    )
+    third = Project(
+        project_id=uuid4(),
+        name="Third",
+        status="ACTIVE",
+        created_at=base_time + timedelta(minutes=2),
+    )
+
+    for project in (first, second, third):
+        store.save_project(project)
+
+    first_page = store.list_projects(
+        limit=2,
+        offset=0,
+    )
+    second_page = store.list_projects(
+        limit=2,
+        offset=2,
+    )
+
+    assert first_page == [third, second]
+    assert second_page == [first]
+    assert store.count_projects() == 3
+    assert store.list_projects(status="ACTIVE") == [
+        third,
+        first,
+    ]
+    assert store.count_projects(status="ACTIVE") == 2
+    assert store.list_projects(status="DISABLED") == [
+        second
+    ]
+    assert store.count_projects(status="DISABLED") == 1
+
+
+def test_update_project_status_is_idempotent(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    project = build_project()
+    store.save_project(project)
+
+    disabled_at = project.created_at + timedelta(minutes=1)
+    repeated_at = project.created_at + timedelta(minutes=2)
+    reactivated_at = project.created_at + timedelta(minutes=3)
+
+    disabled = store.update_project_status(
+        project_id=project.project_id,
+        status="DISABLED",
+        updated_at=disabled_at,
+    )
+    repeated = store.update_project_status(
+        project_id=project.project_id,
+        status="DISABLED",
+        updated_at=repeated_at,
+    )
+    reactivated = store.update_project_status(
+        project_id=project.project_id,
+        status="ACTIVE",
+        updated_at=reactivated_at,
+    )
+
+    assert disabled is not None
+    assert disabled.status == "DISABLED"
+    assert disabled.updated_at == disabled_at
+    assert repeated == disabled
+    assert reactivated is not None
+    assert reactivated.status == "ACTIVE"
+    assert reactivated.updated_at == reactivated_at
+    assert reactivated.created_at == project.created_at
+
+
+def test_update_project_status_returns_none_when_unknown(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+
+    updated = store.update_project_status(
+        project_id=uuid4(),
+        status="DISABLED",
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    assert updated is None
 
 
 def test_initialize_creates_project_api_keys_table(

@@ -16,10 +16,15 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.policy_models import Policy
 from app.project_models import (
+    Project,
     ProjectCreateRequest,
+    ProjectPage,
     ProjectProvisioningResponse,
+    ProjectStatus,
+    ProjectStatusUpdateRequest,
 )
 from app.services.projects import (
+    change_project_status,
     create_project,
     create_project_api_key,
     get_project_or_404,
@@ -32,6 +37,29 @@ router = APIRouter()
 
 def get_policy_templates() -> list[Policy]:
     return load_policies(POLICIES_DIRECTORY)
+
+
+@router.get(
+    "/v1/admin/projects",
+    response_model=ProjectPage,
+    dependencies=[Depends(require_admin_access)],
+)
+def list_projects(
+    status: ProjectStatus | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> ProjectPage:
+    return ProjectPage(
+        items=store.list_projects(
+            status=status,
+            limit=limit,
+            offset=offset,
+        ),
+        total=store.count_projects(status=status),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(
@@ -50,6 +78,38 @@ def provision_project(
     return create_project(
         request=request,
         policy_templates=policy_templates,
+        store=store,
+    )
+
+
+@router.get(
+    "/v1/admin/projects/{project_id}",
+    response_model=Project,
+    dependencies=[Depends(require_admin_access)],
+)
+def get_project(
+    project_id: UUID,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> Project:
+    return get_project_or_404(
+        project_id=project_id,
+        store=store,
+    )
+
+
+@router.patch(
+    "/v1/admin/projects/{project_id}",
+    response_model=Project,
+    dependencies=[Depends(require_admin_access)],
+)
+def update_project_status(
+    project_id: UUID,
+    request: ProjectStatusUpdateRequest,
+    store: EvidenceStore = Depends(get_evidence_store),
+) -> Project:
+    return change_project_status(
+        project_id=project_id,
+        status=request.status,
         store=store,
     )
 
