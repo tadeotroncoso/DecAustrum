@@ -183,6 +183,307 @@ CREATE TABLE IF NOT EXISTS project_api_keys (
 )
 """
 
+CREATE_WEBHOOK_SUBSCRIPTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+    subscription_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    event_types_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN ('ACTIVE', 'DISABLED')
+    ),
+    secret_version INTEGER NOT NULL CHECK (
+        secret_version >= 1
+    ),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    disabled_at TEXT,
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id),
+    CHECK (
+        (
+            status = 'ACTIVE'
+            AND disabled_at IS NULL
+        )
+        OR (
+            status = 'DISABLED'
+            AND disabled_at IS NOT NULL
+        )
+    )
+)
+"""
+
+CREATE_WEBHOOK_SUBSCRIPTIONS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_webhook_subscriptions_project
+ON webhook_subscriptions (
+    project_id,
+    status,
+    created_at DESC
+)
+"""
+
+CREATE_WEBHOOK_SUBSCRIPTIONS_IDENTITY_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS protect_webhook_subscription_identity
+BEFORE UPDATE ON webhook_subscriptions
+WHEN
+    OLD.subscription_id != NEW.subscription_id
+    OR OLD.project_id != NEW.project_id
+    OR OLD.url != NEW.url
+    OR OLD.event_types_json != NEW.event_types_json
+    OR OLD.created_at != NEW.created_at
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'webhook subscription identity is immutable'
+    );
+END
+"""
+
+CREATE_WEBHOOK_SUBSCRIPTIONS_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_webhook_subscription_delete
+BEFORE DELETE ON webhook_subscriptions
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'webhook subscriptions cannot be deleted'
+    );
+END
+"""
+
+CREATE_WEBHOOK_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS webhook_events (
+    event_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (
+        event_type IN (
+            'authorization.created',
+            'approval.requested',
+            'approval.resolved',
+            'project.created',
+            'project.status_changed',
+            'api_key.created',
+            'api_key.revoked',
+            'policy.created',
+            'policy.updated',
+            'policy.disabled',
+            'policy.rolled_back',
+            'webhook.subscription.created',
+            'webhook.subscription.disabled',
+            'webhook.subscription.secret_rotated',
+            'webhook.delivery.redelivery_requested'
+        )
+    ),
+    occurred_at TEXT NOT NULL,
+    resource_type TEXT NOT NULL CHECK (
+        resource_type IN (
+            'AUTHORIZATION_DECISION',
+            'APPROVAL',
+            'PROJECT',
+            'API_KEY',
+            'POLICY',
+            'WEBHOOK_SUBSCRIPTION',
+            'WEBHOOK_DELIVERY'
+        )
+    ),
+    resource_id TEXT NOT NULL,
+    schema_version INTEGER NOT NULL CHECK (
+        schema_version = 1
+    ),
+    payload_json TEXT NOT NULL,
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id)
+)
+"""
+
+CREATE_WEBHOOK_EVENTS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_webhook_events_project
+ON webhook_events (
+    project_id,
+    occurred_at DESC,
+    event_id DESC
+)
+"""
+
+CREATE_WEBHOOK_EVENTS_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_webhook_event_update
+BEFORE UPDATE ON webhook_events
+BEGIN
+    SELECT RAISE(ABORT, 'webhook events are immutable');
+END
+"""
+
+CREATE_WEBHOOK_EVENTS_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_webhook_event_delete
+BEFORE DELETE ON webhook_events
+BEGIN
+    SELECT RAISE(ABORT, 'webhook events are immutable');
+END
+"""
+
+CREATE_WEBHOOK_DELIVERIES_TABLE = """
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    delivery_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    subscription_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN (
+            'PENDING',
+            'PROCESSING',
+            'RETRY_SCHEDULED',
+            'DELIVERED',
+            'DEAD_LETTER',
+            'CANCELLED'
+        )
+    ),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (
+        attempt_count >= 0
+    ),
+    failure_count INTEGER NOT NULL DEFAULT 0 CHECK (
+        failure_count >= 0
+    ),
+    redelivery_count INTEGER NOT NULL DEFAULT 0 CHECK (
+        redelivery_count >= 0
+    ),
+    next_attempt_at TEXT,
+    lease_expires_at TEXT,
+    delivered_at TEXT,
+    last_attempt_at TEXT,
+    last_status_code INTEGER CHECK (
+        last_status_code IS NULL
+        OR last_status_code BETWEEN 100 AND 599
+    ),
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (event_id, subscription_id),
+    FOREIGN KEY (event_id)
+        REFERENCES webhook_events(event_id),
+    FOREIGN KEY (subscription_id)
+        REFERENCES webhook_subscriptions(subscription_id),
+    FOREIGN KEY (project_id)
+        REFERENCES projects(project_id)
+)
+"""
+
+CREATE_WEBHOOK_DELIVERIES_DUE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
+ON webhook_deliveries (
+    status,
+    next_attempt_at,
+    lease_expires_at
+)
+"""
+
+CREATE_WEBHOOK_DELIVERIES_PROJECT_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_project
+ON webhook_deliveries (
+    project_id,
+    created_at DESC,
+    delivery_id DESC
+)
+"""
+
+CREATE_WEBHOOK_DELIVERY_PROJECT_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS enforce_webhook_delivery_project
+BEFORE INSERT ON webhook_deliveries
+WHEN
+    NOT EXISTS (
+        SELECT 1
+        FROM webhook_events
+        WHERE event_id = NEW.event_id
+        AND project_id = NEW.project_id
+    )
+    OR NOT EXISTS (
+        SELECT 1
+        FROM webhook_subscriptions
+        WHERE subscription_id = NEW.subscription_id
+        AND project_id = NEW.project_id
+    )
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'webhook delivery project must match event and subscription'
+    );
+END
+"""
+
+CREATE_WEBHOOK_DELIVERY_IDENTITY_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS protect_webhook_delivery_identity
+BEFORE UPDATE ON webhook_deliveries
+WHEN
+    OLD.delivery_id != NEW.delivery_id
+    OR OLD.event_id != NEW.event_id
+    OR OLD.subscription_id != NEW.subscription_id
+    OR OLD.project_id != NEW.project_id
+    OR OLD.created_at != NEW.created_at
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'webhook delivery identity is immutable'
+    );
+END
+"""
+
+CREATE_WEBHOOK_DELIVERIES_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_webhook_delivery_delete
+BEFORE DELETE ON webhook_deliveries
+BEGIN
+    SELECT RAISE(ABORT, 'webhook deliveries cannot be deleted');
+END
+"""
+
+CREATE_WEBHOOK_DELIVERY_ATTEMPTS_TABLE = """
+CREATE TABLE IF NOT EXISTS webhook_delivery_attempts (
+    attempt_id TEXT PRIMARY KEY,
+    delivery_id TEXT NOT NULL,
+    attempt_number INTEGER NOT NULL CHECK (
+        attempt_number >= 1
+    ),
+    attempted_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (
+        outcome IN (
+            'SUCCESS',
+            'HTTP_ERROR',
+            'NETWORK_ERROR'
+        )
+    ),
+    status_code INTEGER CHECK (
+        status_code IS NULL
+        OR status_code BETWEEN 100 AND 599
+    ),
+    error TEXT,
+    UNIQUE (delivery_id, attempt_number),
+    FOREIGN KEY (delivery_id)
+        REFERENCES webhook_deliveries(delivery_id)
+)
+"""
+
+CREATE_WEBHOOK_DELIVERY_ATTEMPTS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_attempts_delivery
+ON webhook_delivery_attempts (
+    delivery_id,
+    attempt_number DESC
+)
+"""
+
+CREATE_WEBHOOK_DELIVERY_ATTEMPTS_UPDATE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_webhook_attempt_update
+BEFORE UPDATE ON webhook_delivery_attempts
+BEGIN
+    SELECT RAISE(ABORT, 'webhook attempts are immutable');
+END
+"""
+
+CREATE_WEBHOOK_DELIVERY_ATTEMPTS_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS prevent_webhook_attempt_delete
+BEFORE DELETE ON webhook_delivery_attempts
+BEGIN
+    SELECT RAISE(ABORT, 'webhook attempts are immutable');
+END
+"""
+
 CREATE_PROJECT_POLICIES_TABLE = """
 CREATE TABLE IF NOT EXISTS project_policies (
     project_id TEXT NOT NULL,
@@ -286,7 +587,11 @@ CREATE TABLE IF NOT EXISTS administrative_audit_events (
             'POLICY_UPDATED',
             'POLICY_DISABLED',
             'POLICY_ROLLED_BACK',
-            'APPROVAL_RESOLVED'
+            'APPROVAL_RESOLVED',
+            'WEBHOOK_SUBSCRIPTION_CREATED',
+            'WEBHOOK_SUBSCRIPTION_DISABLED',
+            'WEBHOOK_SECRET_ROTATED',
+            'WEBHOOK_REDELIVERY_REQUESTED'
         )
     ),
     resource_type TEXT NOT NULL CHECK (
@@ -294,7 +599,9 @@ CREATE TABLE IF NOT EXISTS administrative_audit_events (
             'PROJECT',
             'API_KEY',
             'POLICY',
-            'APPROVAL'
+            'APPROVAL',
+            'WEBHOOK_SUBSCRIPTION',
+            'WEBHOOK_DELIVERY'
         )
     ),
     resource_id TEXT NOT NULL,
@@ -510,6 +817,86 @@ class SQLiteDatabase:
         )
 
     @staticmethod
+    def _migrate_administrative_audit_events_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        row = connection.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name = 'administrative_audit_events'
+            """
+        ).fetchone()
+
+        if (
+            row is None
+            or "WEBHOOK_SUBSCRIPTION_CREATED" in row[0]
+        ):
+            return
+
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "prevent_admin_audit_event_update"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS "
+            "prevent_admin_audit_event_delete"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS "
+            "idx_admin_audit_events_occurred"
+        )
+        connection.execute(
+            "DROP INDEX IF EXISTS "
+            "idx_admin_audit_events_project"
+        )
+        connection.execute(
+            """
+            ALTER TABLE administrative_audit_events
+            RENAME TO legacy_administrative_audit_events
+            """
+        )
+        connection.execute(
+            CREATE_ADMINISTRATIVE_AUDIT_EVENTS_TABLE
+        )
+        connection.execute(
+            """
+            INSERT INTO administrative_audit_events (
+                event_id,
+                occurred_at,
+                project_id,
+                actor_type,
+                actor_id,
+                action,
+                resource_type,
+                resource_id,
+                reason,
+                before_json,
+                after_json,
+                metadata_json
+            )
+            SELECT
+                event_id,
+                occurred_at,
+                project_id,
+                actor_type,
+                actor_id,
+                action,
+                resource_type,
+                resource_id,
+                reason,
+                before_json,
+                after_json,
+                metadata_json
+            FROM legacy_administrative_audit_events
+            """
+        )
+        connection.execute(
+            "DROP TABLE legacy_administrative_audit_events"
+        )
+
+    @staticmethod
     def _backfill_project_policy_versions(
         connection: sqlite3.Connection,
     ) -> None:
@@ -546,6 +933,54 @@ class SQLiteDatabase:
             connection.execute(CREATE_PROJECTS_TABLE)
             self._migrate_projects_table(connection)
             connection.execute(CREATE_PROJECT_API_KEYS_TABLE)
+            connection.execute(
+                CREATE_WEBHOOK_SUBSCRIPTIONS_TABLE
+            )
+            connection.execute(
+                CREATE_WEBHOOK_SUBSCRIPTIONS_INDEX
+            )
+            connection.execute(
+                CREATE_WEBHOOK_SUBSCRIPTIONS_IDENTITY_TRIGGER
+            )
+            connection.execute(
+                CREATE_WEBHOOK_SUBSCRIPTIONS_DELETE_TRIGGER
+            )
+            connection.execute(CREATE_WEBHOOK_EVENTS_TABLE)
+            connection.execute(CREATE_WEBHOOK_EVENTS_INDEX)
+            connection.execute(
+                CREATE_WEBHOOK_EVENTS_UPDATE_TRIGGER
+            )
+            connection.execute(
+                CREATE_WEBHOOK_EVENTS_DELETE_TRIGGER
+            )
+            connection.execute(CREATE_WEBHOOK_DELIVERIES_TABLE)
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERIES_DUE_INDEX
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERIES_PROJECT_INDEX
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERY_PROJECT_TRIGGER
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERY_IDENTITY_TRIGGER
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERIES_DELETE_TRIGGER
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERY_ATTEMPTS_TABLE
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERY_ATTEMPTS_INDEX
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERY_ATTEMPTS_UPDATE_TRIGGER
+            )
+            connection.execute(
+                CREATE_WEBHOOK_DELIVERY_ATTEMPTS_DELETE_TRIGGER
+            )
             connection.execute(CREATE_PROJECT_POLICIES_TABLE)
             connection.execute(CREATE_PROJECT_POLICIES_INDEX)
             connection.execute(
@@ -563,6 +998,9 @@ class SQLiteDatabase:
             )
             connection.execute(
                 CREATE_ADMINISTRATIVE_AUDIT_EVENTS_TABLE
+            )
+            self._migrate_administrative_audit_events_table(
+                connection
             )
             connection.execute(
                 CREATE_ADMINISTRATIVE_AUDIT_EVENTS_INDEX

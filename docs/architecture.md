@@ -21,7 +21,7 @@ routers. It must not contain endpoint or persistence logic.
 - delegation to application services or repositories.
 
 Routers are grouped by domain: administration, administrative audit, policies,
-authorization, decisions, approvals, and health.
+authorization, decisions, approvals, transactional webhooks, and health.
 
 ### Application services
 
@@ -54,7 +54,8 @@ responses.
 - `decisions.py`;
 - `integrity.py`;
 - `approvals.py`;
-- `idempotency.py`.
+- `idempotency.py`;
+- `webhooks.py`.
 
 `database.py` owns schema initialization, connections, foreign-key enforcement,
 and legacy migrations.
@@ -70,8 +71,8 @@ several repositories.
 3. Active policies are loaded for that project only.
 4. The policy engine returns a structured evaluation and complete trace.
 5. The service creates the decision and, when required, a pending approval.
-6. Decision, integrity proof, approval, and idempotency record are persisted in
-   one transaction.
+6. Decision, integrity proof, approval, idempotency record, immutable webhook
+   events, and matching delivery rows are persisted in one transaction.
 
 ## Transaction boundaries
 
@@ -84,6 +85,10 @@ Two multi-domain operations are intentionally owned by `EvidenceStore`:
 Administrative mutations are also coordinated there so the state change and
 its audit event commit or roll back together. This covers project lifecycle,
 API-key lifecycle, policy configuration and rollback, and approval resolution.
+The same boundary appends the corresponding webhook event and materializes one
+delivery for every active matching subscription. An outbox failure therefore
+rolls back the business mutation and its audit event rather than silently
+losing external notification.
 
 Policy configuration also has an explicit repository transaction: updating the
 active policy snapshot and appending its immutable version either both succeed
@@ -145,6 +150,13 @@ The administrator-only API supports paginated global or project-scoped
 listing, exact event retrieval, and filters for action, resource, actor, and
 timezone-aware occurrence range.
 
+Webhook subscription creation, disablement, signing-secret rotation, and
+manual delivery replay are administrative mutations too. They use the same
+actor and reason headers and append `WEBHOOK_SUBSCRIPTION_CREATED`,
+`WEBHOOK_SUBSCRIPTION_DISABLED`, `WEBHOOK_SECRET_ROTATED`, or
+`WEBHOOK_REDELIVERY_REQUESTED` respectively. Subscription snapshots expose a
+secret version but never a signing secret or master secret.
+
 This log intentionally does not reconstruct historical administrative actions
 that happened before the table existed because their actor and reason cannot be
 known reliably. It is immutable against normal application and database writes,
@@ -152,6 +164,98 @@ but it is not a signed non-repudiation mechanism: a privileged database operator
 could drop protections. Administrator identity is also declarative while a
 shared admin key is used. SSO/RBAC identity and cryptographic audit anchoring
 belong to later production hardening.
+
+## Transactional events and signed webhooks
+
+`webhook_events` is the immutable domain-event outbox. RegTrace currently
+emits these version-1 event types:
+
+- `authorization.created`;
+- `approval.requested` and `approval.resolved`;
+- `project.created` and `project.status_changed`;
+- `api_key.created` and `api_key.revoked`;
+- `policy.created`, `policy.updated`, `policy.disabled`, and
+  `policy.rolled_back`;
+- subscription lifecycle and manual-redelivery administrative events.
+
+Each event has a UUID, project, UTC occurrence time, constrained resource
+identity, type, schema version, and JSON data. The exact canonical JSON body is
+stored once with sorted keys, compact separators, UTF-8 Unicode, and rejected
+non-finite numbers. SQLite triggers reject event updates and deletes.
+
+When an event is appended, RegTrace selects only active subscriptions in the
+same project whose event selectors contain the event type or the standalone
+`*` wildcard. It creates a unique `(event_id, subscription_id)` delivery in the
+same SQLite transaction. A subscription created later never receives old
+events. Event rows remain queryable even when no subscription matched, which
+provides an operational record without inventing retroactive deliveries.
+
+Administrators can create, list, inspect, rotate, and disable subscriptions at
+`/v1/admin/projects/{project_id}/webhook-subscriptions`. Creation and rotation
+return the signing secret once. Normal list and detail responses never include
+it. Subscriptions are disabled rather than deleted so historical delivery
+ownership remains intact. Disabling is idempotent and cancels queued work.
+
+Signing secrets are derived with HMAC-SHA-256 from the subscription UUID,
+secret version, and `REGTRACE_WEBHOOK_MASTER_SECRET`. The master must contain at
+least 32 bytes and must be supplied through the environment, never committed.
+SQLite stores only `secret_version`; neither the master nor a derived signing
+secret is persisted. Rotation increments the version and immediately changes
+the key used for future attempts, including retries of previously queued
+deliveries. Retaining the same master is therefore required across restarts.
+
+Every request body is signed over:
+
+```text
+<unix_timestamp>.<exact_request_body>
+```
+
+with the derived subscription secret. Deliveries include:
+
+- `X-RegTrace-Delivery-Id` for receiver-side idempotency;
+- `X-RegTrace-Event-Id` and `X-RegTrace-Event-Type`;
+- `X-RegTrace-Timestamp` for replay-window checks;
+- `X-RegTrace-Signature` in `v1=<hex-hmac>` format.
+
+Receivers must verify the signature against the raw body before parsing JSON,
+reject stale timestamps (five minutes is the provided verifier default), and
+store processed delivery IDs. Delivery is deliberately **at least once**: an
+expired worker lease can be reclaimed after a crash, so a request that reached
+the receiver immediately before the crash may be sent again.
+
+The dispatcher claims due rows with a 30-second lease and performs HTTP outside
+the business transaction. Any 2xx response succeeds. Network failures and
+non-2xx responses are appended to immutable `webhook_delivery_attempts` and use
+exponential retry delays of 30, 60, 120, 240 seconds and so on, capped at one
+hour. After five consecutive failures, the delivery enters `DEAD_LETTER`.
+Manual redelivery resets the current failure cycle while preserving total
+attempt history and increments `redelivery_count`.
+
+Administrators can inspect project-scoped event and delivery pages, filter by
+event or status, retrieve a delivery with its event, subscription, and complete
+attempt history, and request redelivery. The synchronous administrator-only
+`POST /v1/admin/webhook-deliveries/dispatch` endpoint processes a bounded batch
+and is suitable for manual local operation or an external scheduler. The same
+dispatcher is available as a dedicated process:
+
+```powershell
+python -m app.webhook_worker
+```
+
+`--once` processes one batch for cron-style scheduling; `--batch-size` and
+`--poll-interval` control bounded work and idle polling. API and worker must use
+the same SQLite database and `REGTRACE_WEBHOOK_MASTER_SECRET`. A production
+deployment should run this worker separately from the API so outbound latency
+and retries never consume request-serving capacity.
+
+Webhook URLs require HTTPS and reject credentials, fragments, localhost, and
+private or reserved IP literals. The real transport resolves DNS immediately
+before each attempt, rejects any private or reserved result, and refuses HTTP
+redirects. These controls reduce SSRF exposure but do not replace production
+egress allowlists, DNS pinning, proxy policy, rate limits, or per-customer
+network controls. Authorization event payloads intentionally include the
+decision context; customers must treat their webhook endpoint and signing
+secret as access to that potentially sensitive data.
 
 ## Immutable policy history
 

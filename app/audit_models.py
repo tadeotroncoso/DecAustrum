@@ -26,6 +26,10 @@ AuditAction = Literal[
     "POLICY_DISABLED",
     "POLICY_ROLLED_BACK",
     "APPROVAL_RESOLVED",
+    "WEBHOOK_SUBSCRIPTION_CREATED",
+    "WEBHOOK_SUBSCRIPTION_DISABLED",
+    "WEBHOOK_SECRET_ROTATED",
+    "WEBHOOK_REDELIVERY_REQUESTED",
 ]
 
 AuditResourceType = Literal[
@@ -33,6 +37,8 @@ AuditResourceType = Literal[
     "API_KEY",
     "POLICY",
     "APPROVAL",
+    "WEBHOOK_SUBSCRIPTION",
+    "WEBHOOK_DELIVERY",
 ]
 
 AuditActorIdentifier = Annotated[

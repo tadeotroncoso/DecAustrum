@@ -13,6 +13,9 @@ API_KEY_ENVIRONMENT_VARIABLE = "REGTRACE_API_KEY"
 ADMIN_API_KEY_ENVIRONMENT_VARIABLE = (
     "REGTRACE_ADMIN_API_KEY"
 )
+WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE = (
+    "REGTRACE_WEBHOOK_MASTER_SECRET"
+)
 
 api_key_header = APIKeyHeader(
     name="X-API-Key",
@@ -55,6 +58,26 @@ def get_configured_admin_api_key() -> str:
         )
 
     return api_key
+
+
+def get_configured_webhook_master_secret() -> str:
+    secret = os.getenv(
+        WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE
+    )
+
+    if not secret:
+        raise RuntimeError(
+            f"{WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE} "
+            "must be configured to provision or deliver webhooks."
+        )
+
+    if len(secret.encode("utf-8")) < 32:
+        raise RuntimeError(
+            f"{WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE} "
+            "must contain at least 32 bytes."
+        )
+
+    return secret
 
 
 def authenticate_admin(

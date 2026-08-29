@@ -17,14 +17,23 @@ from app.security import (
     authenticate_project,
     get_configured_admin_api_key,
 )
+from app.webhooks import (
+    UrllibWebhookTransport,
+    WebhookTransport,
+)
 
 
 DATABASE_PATH = Path("data/regtrace.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
+webhook_transport = UrllibWebhookTransport()
 
 
 def get_evidence_store() -> EvidenceStore:
     return evidence_store
+
+
+def get_webhook_transport() -> WebhookTransport:
+    return webhook_transport
 
 
 def get_authenticated_project(

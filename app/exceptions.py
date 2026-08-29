@@ -111,3 +111,87 @@ class DecisionIntegrityMigrationError(Exception):
             "decisions but "
             f"{integrity_count} integrity records."
         )
+
+
+class WebhookSubscriptionNotFoundError(Exception):
+    def __init__(
+        self,
+        project_id: UUID,
+        subscription_id: UUID,
+    ) -> None:
+        self.project_id = project_id
+        self.subscription_id = subscription_id
+
+        super().__init__(
+            f"Webhook subscription '{subscription_id}' was not "
+            f"found for project '{project_id}'."
+        )
+
+
+class WebhookSubscriptionDisabledError(Exception):
+    def __init__(self, subscription_id: UUID) -> None:
+        self.subscription_id = subscription_id
+
+        super().__init__(
+            f"Webhook subscription '{subscription_id}' is disabled."
+        )
+
+
+class WebhookEventNotFoundError(Exception):
+    def __init__(
+        self,
+        project_id: UUID,
+        event_id: UUID,
+    ) -> None:
+        self.project_id = project_id
+        self.event_id = event_id
+
+        super().__init__(
+            f"Webhook event '{event_id}' was not found for "
+            f"project '{project_id}'."
+        )
+
+
+class WebhookDeliveryNotFoundError(Exception):
+    def __init__(
+        self,
+        project_id: UUID,
+        delivery_id: UUID,
+    ) -> None:
+        self.project_id = project_id
+        self.delivery_id = delivery_id
+
+        super().__init__(
+            f"Webhook delivery '{delivery_id}' was not found for "
+            f"project '{project_id}'."
+        )
+
+
+class WebhookDeliveryNotRedeliverableError(Exception):
+    def __init__(
+        self,
+        delivery_id: UUID,
+        current_status: str,
+    ) -> None:
+        self.delivery_id = delivery_id
+        self.current_status = current_status
+
+        super().__init__(
+            f"Webhook delivery '{delivery_id}' cannot be "
+            f"redelivered while it is {current_status}."
+        )
+
+
+class WebhookDeliveryStateError(Exception):
+    def __init__(
+        self,
+        delivery_id: UUID,
+        current_status: str,
+    ) -> None:
+        self.delivery_id = delivery_id
+        self.current_status = current_status
+
+        super().__init__(
+            f"Webhook delivery '{delivery_id}' is {current_status}; "
+            "a processing lease is required to complete it."
+        )

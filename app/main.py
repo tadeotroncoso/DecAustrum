@@ -19,6 +19,7 @@ from app.routers import (
     admin_audit,
     admin_policies,
     admin_projects,
+    admin_webhooks,
     approvals,
     authorization,
     decisions,
@@ -63,6 +64,7 @@ app.include_router(health.router)
 app.include_router(admin_audit.router)
 app.include_router(admin_projects.router)
 app.include_router(admin_policies.router)
+app.include_router(admin_webhooks.router)
 app.include_router(policies.router)
 app.include_router(authorization.router)
 app.include_router(decisions.router)

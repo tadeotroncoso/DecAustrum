@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
@@ -42,6 +43,24 @@ from app.storage.idempotency import IdempotencyRepository
 from app.storage.integrity import DecisionIntegrityRepository
 from app.storage.policies import ProjectPolicyRepository
 from app.storage.projects import ProjectRepository
+from app.storage.webhooks import (
+    WebhookDispatchItem,
+    WebhookRepository,
+)
+from app.webhook_models import (
+    WebhookDelivery,
+    WebhookDeliveryAttempt,
+    WebhookDeliveryOutcome,
+    WebhookDeliveryStatus,
+    WebhookEvent,
+    WebhookEventType,
+    WebhookSubscription,
+    WebhookSubscriptionStatus,
+)
+from app.webhooks import (
+    build_webhook_event,
+    build_webhook_event_from_audit,
+)
 
 
 class EvidenceStore:
@@ -61,6 +80,7 @@ class EvidenceStore:
         )
         self.approvals = ApprovalRepository(self.database)
         self.idempotency = IdempotencyRepository(self.database)
+        self.webhooks = WebhookRepository(self.database)
 
     @property
     def database_path(self) -> Path:
@@ -69,6 +89,33 @@ class EvidenceStore:
     def initialize(self) -> None:
         self.database.initialize()
         self.integrity.backfill_existing_decisions()
+
+    def _enqueue_webhook_event(
+        self,
+        connection: sqlite3.Connection,
+        event: WebhookEvent,
+    ) -> None:
+        if self.projects.get_with_connection(
+            connection=connection,
+            project_id=event.project_id,
+        ) is None:
+            return
+
+        self.webhooks.insert_event_with_deliveries(
+            connection,
+            event,
+        )
+
+    def _record_administrative_change(
+        self,
+        connection: sqlite3.Connection,
+        event: AdministrativeAuditEvent,
+    ) -> None:
+        self.audit.insert(connection, event)
+        self._enqueue_webhook_event(
+            connection,
+            build_webhook_event_from_audit(event),
+        )
 
     def get_administrative_audit_event(
         self,
@@ -178,7 +225,7 @@ class EvidenceStore:
                 and updated is not None
                 and previous.status != updated.status
             ):
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=updated_at,
@@ -206,6 +253,25 @@ class EvidenceStore:
             self.integrity.insert(
                 connection,
                 authorization,
+            )
+            self._enqueue_webhook_event(
+                connection,
+                build_webhook_event(
+                    project_id=authorization.project_id,
+                    event_type="authorization.created",
+                    occurred_at=authorization.evaluated_at,
+                    resource_type="AUTHORIZATION_DECISION",
+                    resource_id=str(
+                        authorization.decision_id
+                    ),
+                    data={
+                        "authorization": (
+                            authorization.model_dump(
+                                mode="json"
+                            )
+                        ),
+                    },
+                ),
             )
 
     def get(
@@ -322,7 +388,7 @@ class EvidenceStore:
             )
 
             if audit_context is not None:
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=resolved_at,
@@ -420,6 +486,43 @@ class EvidenceStore:
                     idempotency_record,
                 )
 
+            self._enqueue_webhook_event(
+                connection,
+                build_webhook_event(
+                    project_id=authorization.project_id,
+                    event_type="authorization.created",
+                    occurred_at=authorization.evaluated_at,
+                    resource_type="AUTHORIZATION_DECISION",
+                    resource_id=str(
+                        authorization.decision_id
+                    ),
+                    data={
+                        "authorization": (
+                            authorization.model_dump(
+                                mode="json"
+                            )
+                        ),
+                    },
+                ),
+            )
+
+            if approval is not None:
+                self._enqueue_webhook_event(
+                    connection,
+                    build_webhook_event(
+                        project_id=authorization.project_id,
+                        event_type="approval.requested",
+                        occurred_at=approval.requested_at,
+                        resource_type="APPROVAL",
+                        resource_id=str(approval.decision_id),
+                        data={
+                            "approval": approval.model_dump(
+                                mode="json"
+                            ),
+                        },
+                    ),
+                )
+
     def save_project_with_api_key(
         self,
         project: Project,
@@ -446,7 +549,7 @@ class EvidenceStore:
                 )
 
             if audit_context is not None:
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=project.created_at,
@@ -463,7 +566,7 @@ class EvidenceStore:
                         },
                     ),
                 )
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=api_key.created_at,
@@ -489,7 +592,7 @@ class EvidenceStore:
                         enabled=True,
                         updated_at=project.created_at,
                     )
-                    self.audit.insert(
+                    self._record_administrative_change(
                         connection,
                         build_audit_event(
                             occurred_at=project.created_at,
@@ -512,7 +615,7 @@ class EvidenceStore:
             self.api_keys.insert(connection, api_key)
 
             if audit_context is not None:
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=api_key.created_at,
@@ -575,7 +678,7 @@ class EvidenceStore:
                 and previous.revoked_at is None
                 and revoked is not None
             ):
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=revoked_at,
@@ -598,6 +701,350 @@ class EvidenceStore:
         return self.api_keys.get_active_project_by_hash(
             key_hash
         )
+
+    def save_webhook_subscription(
+        self,
+        subscription: WebhookSubscription,
+        audit_context: AuditContext,
+    ) -> None:
+        with self.database.connect() as connection:
+            self.webhooks.insert_subscription(
+                connection,
+                subscription,
+            )
+            self._record_administrative_change(
+                connection,
+                build_audit_event(
+                    occurred_at=subscription.created_at,
+                    project_id=subscription.project_id,
+                    context=audit_context,
+                    action="WEBHOOK_SUBSCRIPTION_CREATED",
+                    resource_type="WEBHOOK_SUBSCRIPTION",
+                    resource_id=str(
+                        subscription.subscription_id
+                    ),
+                    after=subscription,
+                ),
+            )
+
+    def get_webhook_subscription(
+        self,
+        project_id: UUID,
+        subscription_id: UUID,
+    ) -> WebhookSubscription | None:
+        return self.webhooks.get_subscription(
+            project_id,
+            subscription_id,
+        )
+
+    def list_webhook_subscriptions(
+        self,
+        project_id: UUID,
+        status: WebhookSubscriptionStatus | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[WebhookSubscription]:
+        return self.webhooks.list_subscriptions(
+            project_id=project_id,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_webhook_subscriptions(
+        self,
+        project_id: UUID,
+        status: WebhookSubscriptionStatus | None = None,
+    ) -> int:
+        return self.webhooks.count_subscriptions(
+            project_id=project_id,
+            status=status,
+        )
+
+    def disable_webhook_subscription(
+        self,
+        *,
+        project_id: UUID,
+        subscription_id: UUID,
+        disabled_at: datetime,
+        audit_context: AuditContext,
+    ) -> WebhookSubscription:
+        with self.database.connect() as connection:
+            previous = (
+                self.webhooks
+                .get_subscription_with_connection(
+                    connection,
+                    project_id,
+                    subscription_id,
+                )
+            )
+            disabled = (
+                self.webhooks
+                .disable_subscription_with_connection(
+                    connection,
+                    project_id,
+                    subscription_id,
+                    disabled_at,
+                )
+            )
+
+            if (
+                previous is not None
+                and previous.status == "ACTIVE"
+            ):
+                self._record_administrative_change(
+                    connection,
+                    build_audit_event(
+                        occurred_at=disabled_at,
+                        project_id=project_id,
+                        context=audit_context,
+                        action=(
+                            "WEBHOOK_SUBSCRIPTION_DISABLED"
+                        ),
+                        resource_type=(
+                            "WEBHOOK_SUBSCRIPTION"
+                        ),
+                        resource_id=str(subscription_id),
+                        before=previous,
+                        after=disabled,
+                    ),
+                )
+
+            return disabled
+
+    def rotate_webhook_secret(
+        self,
+        *,
+        project_id: UUID,
+        subscription_id: UUID,
+        rotated_at: datetime,
+        audit_context: AuditContext,
+    ) -> WebhookSubscription:
+        with self.database.connect() as connection:
+            previous = (
+                self.webhooks
+                .get_subscription_with_connection(
+                    connection,
+                    project_id,
+                    subscription_id,
+                )
+            )
+            rotated = (
+                self.webhooks
+                .rotate_subscription_secret_with_connection(
+                    connection,
+                    project_id,
+                    subscription_id,
+                    rotated_at,
+                )
+            )
+            self._record_administrative_change(
+                connection,
+                build_audit_event(
+                    occurred_at=rotated_at,
+                    project_id=project_id,
+                    context=audit_context,
+                    action="WEBHOOK_SECRET_ROTATED",
+                    resource_type="WEBHOOK_SUBSCRIPTION",
+                    resource_id=str(subscription_id),
+                    before=previous,
+                    after=rotated,
+                    metadata={
+                        "secret_version": rotated.secret_version,
+                    },
+                ),
+            )
+
+            return rotated
+
+    def get_webhook_event(
+        self,
+        project_id: UUID,
+        event_id: UUID,
+    ) -> WebhookEvent | None:
+        return self.webhooks.get_event(project_id, event_id)
+
+    def list_webhook_events(
+        self,
+        project_id: UUID,
+        event_type: WebhookEventType | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[WebhookEvent]:
+        return self.webhooks.list_events(
+            project_id=project_id,
+            event_type=event_type,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_webhook_events(
+        self,
+        project_id: UUID,
+        event_type: WebhookEventType | None = None,
+    ) -> int:
+        return self.webhooks.count_events(
+            project_id=project_id,
+            event_type=event_type,
+        )
+
+    def get_webhook_delivery(
+        self,
+        project_id: UUID,
+        delivery_id: UUID,
+    ) -> WebhookDelivery | None:
+        return self.webhooks.get_delivery(
+            project_id,
+            delivery_id,
+        )
+
+    def list_webhook_deliveries(
+        self,
+        *,
+        project_id: UUID,
+        status: WebhookDeliveryStatus | None = None,
+        subscription_id: UUID | None = None,
+        event_id: UUID | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[WebhookDelivery]:
+        return self.webhooks.list_deliveries(
+            project_id=project_id,
+            status=status,
+            subscription_id=subscription_id,
+            event_id=event_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_webhook_deliveries(
+        self,
+        *,
+        project_id: UUID,
+        status: WebhookDeliveryStatus | None = None,
+        subscription_id: UUID | None = None,
+        event_id: UUID | None = None,
+    ) -> int:
+        return self.webhooks.count_deliveries(
+            project_id=project_id,
+            status=status,
+            subscription_id=subscription_id,
+            event_id=event_id,
+        )
+
+    def list_webhook_delivery_attempts(
+        self,
+        delivery_id: UUID,
+    ) -> list[WebhookDeliveryAttempt]:
+        return self.webhooks.list_attempts(delivery_id)
+
+    def claim_due_webhook_deliveries(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+        lease_seconds: int,
+    ) -> list[WebhookDelivery]:
+        return self.webhooks.claim_due_deliveries(
+            now=now,
+            limit=limit,
+            lease_seconds=lease_seconds,
+        )
+
+    def get_webhook_dispatch_item(
+        self,
+        delivery: WebhookDelivery,
+    ) -> WebhookDispatchItem:
+        return self.webhooks.get_dispatch_item(delivery)
+
+    def cancel_processing_webhook_delivery(
+        self,
+        *,
+        project_id: UUID,
+        delivery_id: UUID,
+        cancelled_at: datetime,
+        reason: str,
+    ) -> WebhookDelivery:
+        return self.webhooks.cancel_processing_delivery(
+            project_id=project_id,
+            delivery_id=delivery_id,
+            cancelled_at=cancelled_at,
+            reason=reason,
+        )
+
+    def record_webhook_delivery_result(
+        self,
+        *,
+        project_id: UUID,
+        delivery_id: UUID,
+        attempted_at: datetime,
+        completed_at: datetime,
+        outcome: WebhookDeliveryOutcome,
+        status_code: int | None,
+        error: str | None,
+        max_attempts: int,
+        base_retry_seconds: int,
+        max_retry_seconds: int,
+    ) -> WebhookDelivery:
+        return self.webhooks.record_delivery_result(
+            project_id=project_id,
+            delivery_id=delivery_id,
+            attempted_at=attempted_at,
+            completed_at=completed_at,
+            outcome=outcome,
+            status_code=status_code,
+            error=error,
+            max_attempts=max_attempts,
+            base_retry_seconds=base_retry_seconds,
+            max_retry_seconds=max_retry_seconds,
+        )
+
+    def request_webhook_redelivery(
+        self,
+        *,
+        project_id: UUID,
+        delivery_id: UUID,
+        requested_at: datetime,
+        audit_context: AuditContext,
+    ) -> WebhookDelivery:
+        with self.database.connect() as connection:
+            previous = (
+                self.webhooks.get_delivery_with_connection(
+                    connection,
+                    project_id,
+                    delivery_id,
+                )
+            )
+            redelivery = (
+                self.webhooks
+                .request_redelivery_with_connection(
+                    connection,
+                    project_id=project_id,
+                    delivery_id=delivery_id,
+                    requested_at=requested_at,
+                )
+            )
+            self._record_administrative_change(
+                connection,
+                build_audit_event(
+                    occurred_at=requested_at,
+                    project_id=project_id,
+                    context=audit_context,
+                    action="WEBHOOK_REDELIVERY_REQUESTED",
+                    resource_type="WEBHOOK_DELIVERY",
+                    resource_id=str(delivery_id),
+                    before=previous,
+                    after=redelivery,
+                    metadata={
+                        "event_id": str(redelivery.event_id),
+                        "subscription_id": str(
+                            redelivery.subscription_id
+                        ),
+                    },
+                ),
+            )
+
+            return redelivery
 
     def seed_project_policies(
         self,
@@ -635,7 +1082,7 @@ class EvidenceStore:
                             policy_id=policy.id,
                         )
                     )
-                    self.audit.insert(
+                    self._record_administrative_change(
                         connection,
                         build_audit_event(
                             occurred_at=seeded_at,
@@ -709,7 +1156,7 @@ class EvidenceStore:
                     if previous is None
                     else "POLICY_UPDATED"
                 )
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=updated_at,
@@ -794,7 +1241,7 @@ class EvidenceStore:
             )
 
             if audit_context is not None:
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=updated_at,
@@ -842,7 +1289,7 @@ class EvidenceStore:
                 and previous.enabled
                 and disabled is not None
             ):
-                self.audit.insert(
+                self._record_administrative_change(
                     connection,
                     build_audit_event(
                         occurred_at=updated_at,
