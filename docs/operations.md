@@ -196,6 +196,52 @@ space. Run only one writer deployment against a local SQLite database. Moving
 to multiple hosts requires a transactional server database and migration of
 the repository layer.
 
+## Reproducible build and release contract
+
+RegTrace has one declared Python minor version and two dependency sets:
+
+- `.python-version` pins the developer and CI interpreter;
+- `requirements/runtime.lock` is the exact API and worker dependency graph;
+- `requirements/dev.lock` extends that graph with the exact test and packaging
+  tools;
+- `requirements/*.in` and `pyproject.toml` document the corresponding direct
+  dependencies.
+
+Use `scripts/bootstrap.ps1` on Windows or `scripts/bootstrap.sh` on POSIX to
+create `.venv` from those files. Both scripts reject an incompatible Python
+minor, install the pinned pip version, check dependency consistency, and in
+development mode install the backend and SDK as editable packages. They never
+copy `.env.example` automatically because accepting placeholder credentials as
+runtime secrets would be unsafe.
+
+Before proposing a release, run `scripts/check.ps1` or `scripts/check.sh`. The
+release gate checks the installed dependency graph, runs the complete test
+suite, and builds the Python SDK wheel in a temporary directory. The backend's
+deployable artifact is the container image rather than a backend wheel.
+
+`Dockerfile` pins the complete official Python image reference, including its
+digest, installs only `requirements/runtime.lock`, runs as an unprivileged user,
+and probes `/health/ready`. `compose.yaml` starts the API and independent
+webhook worker from the same image and mounts one named SQLite data volume.
+The services have a read-only root filesystem, no Linux capabilities, and
+`no-new-privileges`; secrets remain runtime environment values and are not
+baked into the image.
+
+GitHub Actions repeats the test and SDK-package gate on every push and pull
+request, then validates Compose, builds the image, starts it, and waits for the
+readiness endpoint. Third-party actions are pinned to immutable commit SHAs.
+Dependabot proposes dependency, container, and action updates; an update is not
+accepted until the clean build and full CI gate pass.
+
+When intentionally updating dependencies:
+
+1. change the direct version in the matching `.in` file and `pyproject.toml`;
+2. resolve and review the complete exact graph in the matching `.lock` file;
+3. keep runtime versions identical wherever they appear;
+4. rebuild from a new virtual environment and run the release gate;
+5. for a base-image or GitHub Action update, record an immutable digest or
+   commit SHA rather than a mutable tag alone.
+
 ## Production deployment checklist
 
 1. Put RegTrace behind a reverse proxy or load balancer that terminates TLS.

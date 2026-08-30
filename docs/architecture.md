@@ -523,6 +523,41 @@ real FastAPI ASGI app, SQLite repositories, policy engine, approval workflow,
 and grant state machine; they assert the callback is reached exactly once only
 on an authorized path.
 
+## Reproducible distribution topology
+
+The repository produces two intentional distribution boundaries:
+
+```text
+reviewed source + exact locks
+          |
+          +----> Python SDK wheel
+          |
+          `----> one backend container image
+                         |
+                         +----> API process
+                         `----> webhook worker process
+                                      |
+                           shared SQLite data volume
+```
+
+API and worker use the same source, Python runtime, and runtime dependency lock;
+only their process command differs. This prevents the dispatcher from drifting
+from the API's domain and persistence models. The SDK remains a separate wheel
+because clients must not import backend implementation modules.
+
+The reproducibility boundary fixes the Python minor, every direct and transitive
+Python package, the container base-image digest, and every third-party CI action
+commit. Runtime configuration and secrets are deliberately outside that
+boundary: they are injected from `.env` locally or a deployment secret manager
+and never enter an artifact. Generated databases, caches, virtual environments,
+test output, and local credentials are excluded from both Git and Docker build
+context.
+
+Local verification proves a clean dependency installation, the complete test
+suite, and SDK packaging. CI additionally proves Compose parsing, image build,
+container startup, and readiness on a clean Linux runner. Operational update
+and release procedures are documented in `docs/operations.md`.
+
 ## Dependency direction
 
 Dependencies flow inward:

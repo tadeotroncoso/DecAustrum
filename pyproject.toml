@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "regtrace-backend"
+version = "0.1.0"
+description = "Project-scoped authorization and verifiable evidence backend"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [
+    {name = "RegTrace"},
+]
+dependencies = [
+    "fastapi==0.141.1",
+    "pydantic==2.13.4",
+    "python-dotenv==1.2.2",
+    "PyYAML==6.0.3",
+    "uvicorn==0.52.1",
+]
+
+[project.scripts]
+regtrace-webhook-worker = "app.webhook_worker:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app", "app.*"]

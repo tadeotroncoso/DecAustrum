@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: |
+            requirements/dev.lock
+            pyproject.toml
+            sdk/python/pyproject.toml
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip==26.2.1
+          python -m pip install --no-deps --requirement requirements/dev.lock
+          python -m pip check
+
+      - name: Run complete test suite
+        run: python -m pytest -q -p no:cacheprovider
+
+      - name: Build SDK wheel
+        run: >-
+          python -m pip wheel ./sdk/python --no-deps
+          --no-build-isolation --wheel-dir dist
+
+      - name: Upload Python wheels
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: regtrace-python-wheels
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  container-smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: test-and-package
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build pinned runtime image
+        run: docker build --tag regtrace-backend:ci .
+
+      - name: Start container and verify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="regtrace-smoke-${GITHUB_RUN_ID}"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --env-file .env \
+            --publish 127.0.0.1:8000:8000 \
+            regtrace-backend:ci
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent \
+              http://127.0.0.1:8000/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          docker logs "$container_name"
+          exit 1

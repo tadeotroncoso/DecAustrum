@@ -1,0 +1,41 @@
+name: regtrace
+
+x-regtrace-service: &regtrace-service
+  build:
+    context: .
+  image: regtrace-backend:0.1.0
+  env_file:
+    - .env
+  volumes:
+    - regtrace-data:/app/data
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  init: true
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *regtrace-service
+    ports:
+      - "${REGTRACE_PORT:-8000}:8000"
+
+  webhook-worker:
+    <<: *regtrace-service
+    command:
+      - python
+      - -m
+      - app.webhook_worker
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+volumes:
+  regtrace-data:
+    name: regtrace-data

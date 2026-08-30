@@ -1,0 +1,7 @@
+-r runtime.in
+
+# Test, SDK transport, and package-build dependencies.
+httpx==0.28.1
+httpx2==2.12.0
+pytest==9.1.1
+setuptools==84.0.0
