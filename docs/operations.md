@@ -203,7 +203,7 @@ RegTrace has one declared Python minor version and two dependency sets:
 - `.python-version` pins the developer and CI interpreter;
 - `requirements/runtime.lock` is the exact API and worker dependency graph;
 - `requirements/dev.lock` extends that graph with the exact test and packaging
-  tools;
+  tools plus the local security scanners;
 - `requirements/*.in` and `pyproject.toml` document the corresponding direct
   dependencies.
 
@@ -215,9 +215,18 @@ copy `.env.example` automatically because accepting placeholder credentials as
 runtime secrets would be unsafe.
 
 Before proposing a release, run `scripts/check.ps1` or `scripts/check.sh`. The
-release gate checks the installed dependency graph, runs the complete test
-suite, and builds the Python SDK wheel in a temporary directory. The backend's
-deployable artifact is the container image rather than a backend wheel.
+release gate audits the locked dependency graph, rejects new Bandit findings,
+and scans every publishable file for secrets.
+Known test credentials, examples, and secret-setting names are stored only as
+reviewed fingerprints in the secret baseline; any changed or new value blocks
+the gate. The baseline validator also rejects every unreviewed entry and every
+entry confirmed as a real secret. Verification probes are disabled so
+candidate values never leave the machine. The gate then runs the complete test
+suite and builds the Python SDK
+wheel in a temporary directory. The backend's deployable artifact is the
+container image rather than a backend wheel. Existing Bandit false positives
+are suppressed only at their exact reviewed source lines and test IDs; there is
+no global Bandit baseline or disabled rule that could hide a new finding.
 
 `Dockerfile` pins the complete official Python image reference, including its
 digest, installs only `requirements/runtime.lock`, runs as an unprivileged user,
@@ -225,13 +234,18 @@ and probes `/health/ready`. `compose.yaml` starts the API and independent
 webhook worker from the same image and mounts one named SQLite data volume.
 The services have a read-only root filesystem, no Linux capabilities, and
 `no-new-privileges`; secrets remain runtime environment values and are not
-baked into the image.
+baked into the image. The Compose API port binds to `127.0.0.1` by default;
+deliberately placing it behind a network interface or reverse proxy is a
+deployment decision.
 
-GitHub Actions repeats the test and SDK-package gate on every push and pull
-request, then validates Compose, builds the image, starts it, and waits for the
-readiness endpoint. Third-party actions are pinned to immutable commit SHAs.
-Dependabot proposes dependency, container, and action updates; an update is not
-accepted until the clean build and full CI gate pass.
+GitHub Actions repeats the test, SDK-package, dependency, static-analysis, and
+secret gates on every push and pull request. It also runs CodeQL, rejects newly
+introduced high-severity dependencies in pull requests, validates Compose,
+scans source and the runtime image, starts the image, and waits for readiness.
+Every job receives only its required `GITHUB_TOKEN` permissions, checkout does
+not persist credentials, and every external action is pinned to an immutable
+commit SHA. Dependabot proposes dependency, container, and action updates; an
+update is not accepted until the clean build and full CI gate pass.
 
 When intentionally updating dependencies:
 
@@ -255,13 +269,17 @@ When intentionally updating dependencies:
    rate limiter.
 6. Run `python -m app.webhook_worker` as a separate supervised process when
    transactional webhooks are enabled.
-7. Probe `/health/live` and `/health/ready`; scrape `/metrics` with a dedicated
+7. Restrict worker egress to the expected customer webhook destinations. The
+   built-in transport pins each validated public DNS result for its TLS
+   connection and ignores ambient proxy configuration; a required proxy needs
+   an explicitly reviewed transport and matching egress policy.
+8. Probe `/health/live` and `/health/ready`; scrape `/metrics` with a dedicated
    administrator credential over the private network.
-8. Centralize JSON logs and create alerts for authentication abuse, rate-limit
+9. Centralize JSON logs and create alerts for authentication abuse, rate-limit
    events, 5xx responses, readiness failures, and webhook dead letters.
-9. Back up and restore-test the SQLite data volume. Protect any externally
+10. Back up and restore-test the SQLite data volume. Protect any externally
    stored integrity-chain checkpoint separately from the database.
-10. Run the full test suite before release and test key rotation, restore, and
+11. Run the full test suite before release and test key rotation, restore, and
     webhook recovery in a non-production environment.
 
 This block hardens the application boundary and makes one-process operation

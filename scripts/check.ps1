@@ -26,6 +26,8 @@ if (-not (Test-Path -LiteralPath $virtualPython)) {
     throw "Run scripts\bootstrap.ps1 before the project checks."
 }
 
+& (Join-Path $repositoryRoot "scripts\security-check.ps1")
+
 $artifactDirectory = Join-Path (
     [System.IO.Path]::GetTempPath()
 ) ("regtrace-build-" + [guid]::NewGuid().ToString("N"))

@@ -233,7 +233,7 @@ class AuthorizationDecisionRepository:
                     d.evaluated_at {direction},
                     d.decision_id {direction}
                 LIMIT ? OFFSET ?
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchall()
 
@@ -261,7 +261,7 @@ class AuthorizationDecisionRepository:
                 LEFT JOIN approval_requests AS a
                     ON a.decision_id = d.decision_id
                 WHERE {where_clause}
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchone()
 

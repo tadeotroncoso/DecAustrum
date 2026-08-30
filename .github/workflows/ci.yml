@@ -5,8 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -16,10 +15,14 @@ jobs:
   test-and-package:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
 
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up pinned Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -37,6 +40,29 @@ jobs:
           python -m pip install --no-deps --requirement requirements/dev.lock
           python -m pip check
 
+      - name: Audit dependencies, source, and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip_audit \
+            --requirement requirements/dev.lock \
+            --no-deps \
+            --disable-pip \
+            --progress-spinner off
+          if ! bandit_output=$(python -m bandit \
+            --recursive app \
+            --quiet 2>&1); then
+            printf '%s\n' "$bandit_output" >&2
+            exit 1
+          fi
+          python scripts/validate_secrets_baseline.py .secrets.baseline
+          git ls-files --cached --others --exclude-standard -z | \
+            xargs -0 detect-secrets-hook \
+              --baseline .secrets.baseline \
+              --no-verify \
+              --exclude-files \
+                '^\.(bandit-baseline\.json|secrets\.baseline)$'
+
       - name: Run complete test suite
         run: python -m pytest -q -p no:cacheprovider
 
@@ -53,14 +79,70 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  container-smoke-test:
+  dependency-review:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: test-and-package
+    timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Reject newly introduced vulnerable dependencies
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
+  codeql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: python
+          queries: security-extended
+
+      - name: Analyze Python and workflow security
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+
+  container-smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: test-and-package
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Scan repository for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          format: table
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          version: v0.74.0
 
       - name: Validate Compose configuration
         run: |
@@ -69,6 +151,19 @@ jobs:
 
       - name: Build pinned runtime image
         run: docker build --tag regtrace-backend:ci .
+
+      - name: Scan runtime image for actionable vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: regtrace-backend:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          version: v0.74.0
+          skip-setup-trivy: true
 
       - name: Start container and verify readiness
         shell: bash

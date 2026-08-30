@@ -1,3 +1,4 @@
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -95,6 +96,11 @@ def test_development_input_is_covered_by_lock():
     assert "-r runtime.lock" in (
         REQUIREMENTS / "dev.lock"
     ).read_text(encoding="utf-8")
+    assert {
+        "bandit",
+        "detect-secrets",
+        "pip-audit",
+    } <= development_input.keys()
 
 
 def test_pip_version_is_consistent_across_automation():
@@ -167,6 +173,9 @@ def test_compose_defines_hardened_api_worker_and_persistent_data():
     assert services["webhook-worker"]["depends_on"]["api"] == {
         "condition": "service_healthy"
     }
+    assert services["api"]["ports"] == [
+        "127.0.0.1:${REGTRACE_PORT:-8000}:8000"
+    ]
     assert compose["volumes"]["regtrace-data"]["name"] == (
         "regtrace-data"
     )
@@ -183,10 +192,29 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert workflow["name"] == "CI"
     assert uses
     assert all(
-        re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}", use)
+        re.fullmatch(
+            r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"
+            r"(?:/[A-Za-z0-9_.-]+)?@[0-9a-f]{40}",
+            use,
+        )
         for use in uses
     )
+    checkout_count = workflow_text.count("uses: actions/checkout@")
+    assert workflow_text.count("persist-credentials: false") == (
+        checkout_count
+    )
+    assert workflow_text.count("permissions:") >= 5
+    assert "permissions: {}" in workflow_text
     assert "python -m pytest -q -p no:cacheprovider" in workflow_text
+    assert "python -m pip_audit" in workflow_text
+    assert "python -m bandit" in workflow_text
+    assert "detect-secrets-hook" in workflow_text
+    assert "validate_secrets_baseline.py" in workflow_text
+    assert "github/codeql-action/init@" in workflow_text
+    assert "github/codeql-action/analyze@" in workflow_text
+    assert "actions/dependency-review-action@" in workflow_text
+    assert workflow_text.count("aquasecurity/trivy-action@") == 2
+    assert "version: v0.74.0" in workflow_text
     assert "python -m pip wheel ./sdk/python" in workflow_text
     assert "docker compose config --quiet" in workflow_text
     assert "docker build --tag regtrace-backend:ci ." in workflow_text
@@ -232,3 +260,43 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
         content = path.read_text(encoding="utf-8")
         assert "sdk-python" in content
         assert "sdk/python/src" in content.replace("\\", "/")
+        assert "security-check" in content
+
+    for path in [
+        scripts / "security-check.ps1",
+        scripts / "security-check.sh",
+    ]:
+        content = path.read_text(encoding="utf-8")
+        assert "pip_audit" in content
+        assert "bandit" in content
+        assert "detect-secrets-hook" in content
+        assert "validate_secrets_baseline.py" in content
+
+
+def test_secret_baseline_is_explicit_and_reviewable():
+    secrets = json.loads(
+        (REPOSITORY_ROOT / ".secrets.baseline").read_text(
+            encoding="utf-8"
+        )
+    )
+    secret_findings = [
+        finding
+        for findings in secrets["results"].values()
+        for finding in findings
+    ]
+
+    assert secret_findings
+    assert all(
+        finding["type"] in {
+            "Basic Auth Credentials",
+            "Secret Keyword",
+        }
+        for finding in secret_findings
+    )
+    assert all(
+        finding.get("is_secret") is False
+        for finding in secret_findings
+    )
+    assert ".bandit-baseline.json" not in secrets["results"]
+    assert ".secrets.baseline" not in secrets["results"]
+    assert not (REPOSITORY_ROOT / ".bandit-baseline.json").exists()

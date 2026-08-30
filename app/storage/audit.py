@@ -215,7 +215,7 @@ class AdministrativeAuditRepository:
                 {where_clause}
                 ORDER BY occurred_at DESC, event_id DESC
                 LIMIT ? OFFSET ?
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchall()
 
@@ -250,7 +250,7 @@ class AdministrativeAuditRepository:
                 SELECT COUNT(*)
                 FROM administrative_audit_events
                 {where_clause}
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchone()
 

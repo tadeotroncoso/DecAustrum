@@ -216,7 +216,7 @@ class WebhookRepository:
                 WHERE {where_clause}
                 ORDER BY created_at DESC, subscription_id DESC
                 LIMIT ? OFFSET ?
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchall()
 
@@ -241,7 +241,7 @@ class WebhookRepository:
                 SELECT COUNT(*)
                 FROM webhook_subscriptions
                 WHERE {where_clause}
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchone()
 
@@ -574,7 +574,7 @@ class WebhookRepository:
                 {event_filter}
                 ORDER BY occurred_at DESC, event_id DESC
                 LIMIT ? OFFSET ?
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchall()
 
@@ -599,7 +599,7 @@ class WebhookRepository:
                 FROM webhook_events
                 WHERE project_id = ?
                 {event_filter}
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchone()
 
@@ -689,7 +689,7 @@ class WebhookRepository:
                 WHERE {where_clause}
                 ORDER BY created_at DESC, delivery_id DESC
                 LIMIT ? OFFSET ?
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchall()
 
@@ -716,7 +716,7 @@ class WebhookRepository:
                 SELECT COUNT(*)
                 FROM webhook_deliveries
                 WHERE {where_clause}
-                """,
+                """,  # nosec B608
                 parameters,
             ).fetchone()
 
@@ -826,7 +826,7 @@ class WebhookRepository:
                     lease_expires_at = ?,
                     updated_at = ?
                 WHERE delivery_id IN ({placeholders})
-                """,
+                """,  # nosec B608
                 [
                     lease_expires_at.isoformat(),
                     now.isoformat(),
@@ -839,7 +839,7 @@ class WebhookRepository:
                 FROM webhook_deliveries
                 WHERE delivery_id IN ({placeholders})
                 ORDER BY created_at, delivery_id
-                """,
+                """,  # nosec B608
                 delivery_ids,
             ).fetchall()
 

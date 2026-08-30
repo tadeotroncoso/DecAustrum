@@ -301,13 +301,18 @@ deployment should run this worker separately from the API so outbound latency
 and retries never consume request-serving capacity.
 
 Webhook URLs require HTTPS and reject credentials, fragments, localhost, and
-private or reserved IP literals. The real transport resolves DNS immediately
-before each attempt, rejects any private or reserved result, and refuses HTTP
-redirects. These controls reduce SSRF exposure but do not replace production
-egress allowlists, DNS pinning, proxy policy, rate limits, or per-customer
-network controls. Authorization event payloads intentionally include the
-decision context; customers must treat their webhook endpoint and signing
-secret as access to that potentially sensitive data.
+private or reserved IP literals. The real transport resolves DNS exactly once
+per attempt and rejects the complete result if any address is private or
+reserved. It then connects directly to one of those validated addresses while
+preserving the original hostname for TLS certificate verification and the HTTP
+Host header. It returns 3xx responses without following them, so a redirect
+cannot change the validated destination. The transport intentionally ignores
+ambient proxy variables because a proxy would reintroduce an independent name
+resolution and routing boundary. These controls reduce SSRF exposure but do
+not replace production egress allowlists, an explicitly reviewed proxy policy,
+rate limits, or per-customer network controls. Authorization event payloads
+intentionally include the decision context; customers must treat their webhook
+endpoint and signing secret as access to that potentially sensitive data.
 
 ## Immutable policy history
 

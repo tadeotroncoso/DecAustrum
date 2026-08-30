@@ -9,6 +9,8 @@ if [ ! -x "$virtual_python" ]; then
     exit 1
 fi
 
+"$repository_root/scripts/security-check.sh"
+
 artifact_directory=$(mktemp -d "${TMPDIR:-/tmp}/regtrace-build.XXXXXX")
 trap 'rm -rf "$artifact_directory"' EXIT HUP INT TERM
 sdk_build_source="$artifact_directory/sdk-python"

@@ -1,19 +1,15 @@
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import socket
+import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from typing import Any, Protocol
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import (
-    HTTPRedirectHandler,
-    Request,
-    build_opener,
-)
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
@@ -23,6 +19,7 @@ from app.webhook_models import (
     WebhookEvent,
     WebhookEventType,
     WebhookResourceType,
+    validate_webhook_url,
 )
 
 
@@ -46,7 +43,7 @@ AUDIT_WEBHOOK_EVENT_TYPES: dict[AuditAction, WebhookEventType] = {
     "WEBHOOK_SUBSCRIPTION_DISABLED": (
         "webhook.subscription.disabled"
     ),
-    "WEBHOOK_SECRET_ROTATED": (
+    "WEBHOOK_SECRET_ROTATED": (  # nosec B105
         "webhook.subscription.secret_rotated"
     ),
     "WEBHOOK_REDELIVERY_REQUESTED": (
@@ -247,12 +244,24 @@ class WebhookTransport(Protocol):
         ...
 
 
-class _NoRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(self, *_args, **_kwargs):
-        return None
+@dataclass(frozen=True)
+class _ResolvedWebhookAddress:
+    family: int
+    socket_type: int
+    protocol: int
+    socket_address: tuple[Any, ...]
 
 
-def ensure_public_webhook_destination(url: str) -> None:
+def _resolve_public_webhook_destination(
+    url: str,
+) -> tuple[str, int, tuple[_ResolvedWebhookAddress, ...]]:
+    try:
+        validate_webhook_url(url)
+    except ValueError as exc:
+        raise WebhookTransportError(
+            "Webhook destination is not a safe HTTPS URL."
+        ) from exc
+
     parsed = urlsplit(url)
     hostname = parsed.hostname
 
@@ -262,18 +271,49 @@ def ensure_public_webhook_destination(url: str) -> None:
         )
 
     try:
-        addresses = {
-            ip_address(sockaddr[0])
-            for *_prefix, sockaddr in socket.getaddrinfo(
-                hostname,
-                parsed.port or 443,
-                type=socket.SOCK_STREAM,
-            )
-        }
+        port = parsed.port or 443
+    except ValueError as exc:
+        raise WebhookTransportError(
+            "Webhook destination has an invalid port."
+        ) from exc
+
+    try:
+        address_info = socket.getaddrinfo(
+            hostname,
+            port,
+            type=socket.SOCK_STREAM,
+        )
     except (OSError, ValueError) as exc:
         raise WebhookTransportError(
             "Webhook destination could not be resolved."
         ) from exc
+
+    resolved_addresses = []
+    addresses = set()
+
+    for (
+        family,
+        socket_type,
+        protocol,
+        _canonical_name,
+        socket_address,
+    ) in address_info:
+        try:
+            address = ip_address(socket_address[0])
+        except ValueError as exc:
+            raise WebhookTransportError(
+                "Webhook destination returned an invalid address."
+            ) from exc
+
+        addresses.add(address)
+        resolved_addresses.append(
+            _ResolvedWebhookAddress(
+                family=family,
+                socket_type=socket_type,
+                protocol=protocol,
+                socket_address=socket_address,
+            )
+        )
 
     if not addresses or any(
         not address.is_global
@@ -283,6 +323,48 @@ def ensure_public_webhook_destination(url: str) -> None:
             "Webhook destination resolved to a private or "
             "reserved address."
         )
+
+    return hostname, port, tuple(resolved_addresses)
+
+
+def ensure_public_webhook_destination(url: str) -> None:
+    _resolve_public_webhook_destination(url)
+
+
+def _open_pinned_https_connection(
+    *,
+    hostname: str,
+    port: int,
+    address: _ResolvedWebhookAddress,
+    timeout_seconds: float,
+    tls_context: ssl.SSLContext,
+) -> http.client.HTTPSConnection:
+    raw_socket = socket.socket(
+        address.family,
+        address.socket_type,
+        address.protocol,
+    )
+
+    try:
+        raw_socket.settimeout(timeout_seconds)
+        raw_socket.connect(address.socket_address)
+        tls_socket = tls_context.wrap_socket(
+            raw_socket,
+            server_hostname=hostname,
+        )
+    except Exception:
+        raw_socket.close()
+        raise
+
+    connection = http.client.HTTPSConnection(
+        host=hostname,
+        port=port,
+        timeout=timeout_seconds,
+        context=tls_context,
+    )
+    connection.sock = tls_socket
+
+    return connection
 
 
 class UrllibWebhookTransport:
@@ -294,27 +376,51 @@ class UrllibWebhookTransport:
         headers: dict[str, str],
         timeout_seconds: float,
     ) -> WebhookHttpResponse:
-        ensure_public_webhook_destination(url)
-        request = Request(
-            url=url,
-            data=body,
-            headers=headers,
-            method="POST",
+        hostname, port, addresses = (
+            _resolve_public_webhook_destination(url)
         )
-        opener = build_opener(_NoRedirectHandler())
+        parsed = urlsplit(url)
+        request_target = parsed.path or "/"
 
-        try:
-            with opener.open(
-                request,
-                timeout=timeout_seconds,
-            ) as response:
+        if parsed.query:
+            request_target += "?" + parsed.query
+
+        tls_context = ssl.create_default_context()
+        last_error: BaseException | None = None
+
+        for address in addresses:
+            connection = None
+
+            try:
+                connection = _open_pinned_https_connection(
+                    hostname=hostname,
+                    port=port,
+                    address=address,
+                    timeout_seconds=timeout_seconds,
+                    tls_context=tls_context,
+                )
+                connection.request(
+                    method="POST",
+                    url=request_target,
+                    body=body,
+                    headers=headers,
+                )
+                response = connection.getresponse()
+
                 return WebhookHttpResponse(
                     status_code=response.status
                 )
-        except HTTPError as exc:
-            return WebhookHttpResponse(status_code=exc.code)
-        except (URLError, OSError, TimeoutError) as exc:
-            raise WebhookTransportError(
-                "Webhook request failed before receiving "
-                "an HTTP response."
-            ) from exc
+            except (
+                http.client.HTTPException,
+                OSError,
+                TimeoutError,
+            ) as exc:
+                last_error = exc
+            finally:
+                if connection is not None:
+                    connection.close()
+
+        raise WebhookTransportError(
+            "Webhook request failed before receiving "
+            "an HTTP response."
+        ) from last_error

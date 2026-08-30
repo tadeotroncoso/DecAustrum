@@ -51,7 +51,9 @@ docker compose up --build
 
 Compose builds a Python 3.12 image pinned by digest, runs as an unprivileged
 user with dropped Linux capabilities, and stores SQLite state in the named
-`regtrace-data` volume. Stop services without deleting evidence using:
+`regtrace-data` volume. The development port is bound only to
+`127.0.0.1`, so it is not exposed to other devices on the local network. Stop
+services without deleting evidence using:
 
 ```powershell
 docker compose down
@@ -73,11 +75,13 @@ or:
 sh ./scripts/check.sh
 ```
 
-It checks the installed dependency graph, runs the complete test suite, and
-builds the distributable SDK wheel in a temporary directory. The backend's
-deployment artifact is its container image. GitHub Actions repeats those checks
-on Ubuntu and additionally builds and starts that image until `/health/ready`
-succeeds.
+It audits dependency vulnerabilities, rejects new Python security findings,
+scans publishable files against reviewed secret-fixture fingerprints, runs the
+complete test suite, and builds the distributable SDK wheel in a temporary
+directory. An unreviewed or confirmed-secret baseline entry fails the gate. The
+backend's deployment artifact is its container image. GitHub Actions repeats
+those checks on Ubuntu, runs CodeQL and dependency review, scans the repository
+and runtime image, and starts the image until `/health/ready` succeeds.
 
 ## Python SDK
 

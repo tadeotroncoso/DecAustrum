@@ -88,7 +88,7 @@ class EvidenceRepository:
             ORDER BY
                 d.evaluated_at {direction},
                 d.decision_id {direction}
-        """
+        """  # nosec B608
 
         return query, parameters
 
@@ -139,7 +139,7 @@ class EvidenceRepository:
                     LEFT JOIN approval_requests AS a
                         ON a.decision_id = d.decision_id
                     WHERE {where_clause}
-                    """,
+                    """,  # nosec B608
                     parameters,
                 ).fetchone()[0]
             )
@@ -205,7 +205,7 @@ class EvidenceRepository:
                     LEFT JOIN approval_requests AS a
                         ON a.decision_id = d.decision_id
                     WHERE {where_clause}
-                    """,
+                    """,  # nosec B608
                     parameters,
                 ).fetchone()[0]
             )

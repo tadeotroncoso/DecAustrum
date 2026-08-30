@@ -9,6 +9,7 @@
 *.txt text eol=lf
 *.lock text eol=lf
 *.in text eol=lf
+*.json text eol=lf
 Dockerfile text eol=lf
 .dockerignore text eol=lf
 .env.example text eol=lf

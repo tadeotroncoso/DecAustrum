@@ -22,7 +22,7 @@ services:
   api:
     <<: *regtrace-service
     ports:
-      - "${REGTRACE_PORT:-8000}:8000"
+      - "127.0.0.1:${REGTRACE_PORT:-8000}:8000"
 
   webhook-worker:
     <<: *regtrace-service

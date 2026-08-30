@@ -1106,7 +1106,7 @@ class SQLiteDatabase:
                 resolved_at,
                 resolved_by
             FROM legacy_approval_requests
-            """
+            """  # nosec B608
         )
         connection.execute(
             "DROP TABLE legacy_approval_requests"
