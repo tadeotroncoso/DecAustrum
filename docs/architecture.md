@@ -478,6 +478,51 @@ bundle proves internal consistency and detects accidental or partial tampering;
 as with the live ledger, an attacker able to replace the entire bundle and
 recompute every digest is outside the SHA-256-only non-repudiation guarantee.
 
+## Python SDK integration boundary
+
+`sdk/python` is a separate, typed distribution with no import dependency on
+the backend. It depends only on `httpx` and treats the HTTP API as the trust
+boundary. Synchronous and asynchronous clients validate local inputs, send the
+project API key and correlation ID, parse UUIDs and timezone-aware timestamps,
+and reject malformed success responses instead of passing untyped dictionaries
+into application code.
+
+The SDK runtime surface covers authorization, decision lookup, approval
+listing and resolution, and one-time execution-grant consumption. It does not
+expose the administrator control plane. This separation lets application
+runtimes receive only project-scoped credentials while project provisioning,
+policy mutation, API-key lifecycle, webhook administration, and immutable
+audit access remain privileged REST operations.
+
+`RegTraceGuard` is the real side-effect integration boundary:
+
+```text
+business request
+      |
+      v
+SDK authorize ---- DENY ------------> callback not invoked
+      |
+      +---------- REQUIRE_APPROVAL --> callback not invoked
+      |                                  |
+      |                         reviewer approves
+      |                                  |
+      |                         one-time grant consumed
+      |                                  |
+      `---------- ALLOW -----------------+----> callback invoked
+```
+
+The approved path consumes its grant before entering the callback. This closes
+the authorization state machine but cannot make an arbitrary external side
+effect transactional with RegTrace. Integrations should therefore keep the
+callback narrow and idempotent, and re-authorize after an ambiguous or failed
+post-consumption operation rather than replaying a grant.
+
+SDK contract tests use mocked HTTP responses for transport and parser behavior.
+Integration tests run both synchronous and asynchronous clients against the
+real FastAPI ASGI app, SQLite repositories, policy engine, approval workflow,
+and grant state machine; they assert the callback is reached exactly once only
+on an authorized path.
+
 ## Dependency direction
 
 Dependencies flow inward:

@@ -61,6 +61,22 @@ def test_execution_grant_rejects_wrong_secret():
         )
 
 
+def test_execution_grant_rejects_noncanonical_signature_encoding():
+    token = build_execution_grant_token(build_payload(), SECRET)
+    pieces = token.split(".")
+    alphabet = (
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789-_"
+    )
+    last_index = alphabet.index(pieces[2][-1])
+
+    pieces[2] = pieces[2][:-1] + alphabet[last_index ^ 1]
+
+    with pytest.raises(InvalidExecutionGrantError):
+        parse_execution_grant_token(".".join(pieces), SECRET)
+
+
 def test_execution_grant_rejects_weak_secret():
     with pytest.raises(ValueError, match="at least 32 bytes"):
         build_execution_grant_token(build_payload(), "short")

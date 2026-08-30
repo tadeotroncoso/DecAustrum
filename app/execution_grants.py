@@ -31,16 +31,27 @@ def _base64url_encode(value: bytes) -> str:
 
 
 def _base64url_decode(value: str) -> bytes:
+    if not value or "=" in value:
+        raise InvalidExecutionGrantError()
+
     padding = "=" * (-len(value) % 4)
 
     try:
-        return base64.b64decode(
+        decoded = base64.b64decode(
             value + padding,
             altchars=b"-_",
             validate=True,
         )
     except (ValueError, TypeError) as exc:
         raise InvalidExecutionGrantError() from exc
+
+    if not hmac.compare_digest(
+        _base64url_encode(decoded),
+        value,
+    ):
+        raise InvalidExecutionGrantError()
+
+    return decoded
 
 
 def _payload_segment(payload: ExecutionGrantPayload) -> str:

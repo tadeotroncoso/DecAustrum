@@ -98,6 +98,38 @@ issuance, or explicitly accept that outstanding grants will be invalidated.
 The current local MVP intentionally supports one active signing secret rather
 than a multi-key verification ring.
 
+## Python SDK integration runbook
+
+Install the local package with:
+
+```powershell
+python -m pip install -e .\sdk\python
+```
+
+Configure the application runtime with a project-scoped `REGTRACE_API_KEY` and
+`REGTRACE_BASE_URL`. Never give an SDK runtime the administrator API key,
+webhook master secret, or server-side execution-grant signing secret.
+
+Use a stable business idempotency key for authorization calls. Do not configure
+generic HTTP middleware to retry `POST /v1/execution-grants/consume`: a timeout
+may occur after the server atomically consumed the credential. If consumption
+is ambiguous, inspect the decision evidence and begin a new authorization
+flow. Never log approval responses or exception payloads that an upstream
+wrapper might enrich with the plaintext grant.
+
+Before releasing an integration:
+
+1. Test `ALLOW`, `DENY`, and `REQUIRE_APPROVAL` separately.
+2. Assert the business callback is untouched for denied and pending requests.
+3. Test that changed agent, action, or context cannot use an issued grant.
+4. Test replay and expiry without retrying the side effect.
+5. Give reviewers and execution runtimes separate operational identities even
+   if the local MVP currently authenticates both with one project key.
+6. Run the example only against a local or non-production project because its
+   reviewer is intentionally inline for demonstration.
+
+The full usage and error contract is documented in `docs/sdk-python.md`.
+
 ## Health and metrics
 
 | Endpoint | Authentication | Meaning |
