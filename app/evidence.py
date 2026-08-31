@@ -748,7 +748,7 @@ def load_evidence_bundle_archive(
         )
     except ValidationError as exc:
         raise EvidenceBundleArchiveError(
-            "Evidence archive contains invalid RegTrace data."
+            "Evidence archive contains invalid DecAustrum data."
         ) from exc
 
 

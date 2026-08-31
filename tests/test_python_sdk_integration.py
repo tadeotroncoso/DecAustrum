@@ -11,15 +11,15 @@ from app.main import app, get_evidence_store
 from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
-from regtrace import (
+from decaustrum import (
     ActionDeniedError,
     ApprovalRequiredError,
-    AsyncRegTraceClient,
-    AsyncRegTraceGuard,
+    AsyncDecAustrumClient,
+    AsyncDecAustrumGuard,
     AuthenticationError,
     ConflictError,
-    RegTraceClient,
-    RegTraceGuard,
+    DecAustrumClient,
+    DecAustrumGuard,
 )
 
 
@@ -36,13 +36,13 @@ TRANSFER_CONTEXT = {
 
 @pytest.fixture
 def sdk_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv("REGTRACE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", TEST_API_KEY)
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         TEST_EXECUTION_SECRET,
     )
     store = EvidenceStore(tmp_path / "sdk-integration.db")
@@ -55,7 +55,7 @@ def sdk_environment(tmp_path, monkeypatch):
     )
     app.dependency_overrides[get_evidence_store] = lambda: store
     http_client = TestClient(app)
-    sdk = RegTraceClient(
+    sdk = DecAustrumClient(
         api_key=TEST_API_KEY,
         base_url="http://testserver",
         http_client=http_client,
@@ -69,7 +69,7 @@ def sdk_environment(tmp_path, monkeypatch):
 
 def test_sdk_runs_allow_operation_against_real_api(sdk_environment):
     sdk, _ = sdk_environment
-    guard = RegTraceGuard(sdk)
+    guard = DecAustrumGuard(sdk)
     calls = 0
 
     def refund() -> str:
@@ -94,7 +94,7 @@ def test_sdk_runs_allow_operation_against_real_api(sdk_environment):
 
 def test_sdk_blocks_denied_operation_against_real_api(sdk_environment):
     sdk, _ = sdk_environment
-    guard = RegTraceGuard(sdk)
+    guard = DecAustrumGuard(sdk)
     calls = 0
 
     def transfer() -> None:
@@ -118,7 +118,7 @@ def test_sdk_blocks_denied_operation_against_real_api(sdk_environment):
 
 def test_sdk_closes_real_approval_and_execution_flow(sdk_environment):
     sdk, _ = sdk_environment
-    guard = RegTraceGuard(sdk)
+    guard = DecAustrumGuard(sdk)
     calls = 0
 
     def transfer() -> str:
@@ -197,7 +197,7 @@ def test_sdk_changed_context_cannot_run_and_does_not_consume_grant(
         decision.decision_id,
         resolved_by="security-reviewer",
     )
-    guard = RegTraceGuard(sdk)
+    guard = DecAustrumGuard(sdk)
     calls = 0
 
     def transfer() -> str:
@@ -277,7 +277,7 @@ def test_sdk_authorization_idempotency_uses_real_backend(sdk_environment):
 def test_sdk_exposes_authentication_error_and_request_id(sdk_environment):
     _, _ = sdk_environment
     http_client = TestClient(app)
-    invalid_sdk = RegTraceClient(
+    invalid_sdk = DecAustrumClient(
         api_key="invalid-project-key",
         base_url="http://testserver",
         http_client=http_client,
@@ -306,12 +306,12 @@ def test_async_sdk_and_guard_integrate_with_real_asgi_api(
         async with httpx.AsyncClient(
             transport=transport,
         ) as http_client:
-            client = AsyncRegTraceClient(
+            client = AsyncDecAustrumClient(
                 api_key=TEST_API_KEY,
                 base_url="http://testserver",
                 http_client=http_client,
             )
-            guard = AsyncRegTraceGuard(client)
+            guard = AsyncDecAustrumGuard(client)
             calls = 0
 
             async def transfer() -> str:

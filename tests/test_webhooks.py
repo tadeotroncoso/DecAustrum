@@ -43,22 +43,22 @@ def build_event() -> WebhookEvent:
 
 def test_subscription_request_defaults_to_all_events():
     request = WebhookSubscriptionCreateRequest(
-        url="  https://hooks.example.com/regtrace  "
+        url="  https://hooks.example.com/decaustrum  "
     )
 
-    assert request.url == "https://hooks.example.com/regtrace"
+    assert request.url == "https://hooks.example.com/decaustrum"
     assert request.event_types == ["*"]
 
 
 @pytest.mark.parametrize(
     "url",
     [
-        "http://hooks.example.com/regtrace",
-        "https://localhost/regtrace",
-        "https://127.0.0.1/regtrace",
-        "https://10.0.0.1/regtrace",
-        "https://user:password@hooks.example.com/regtrace",
-        "https://hooks.example.com/regtrace#secret",
+        "http://hooks.example.com/decaustrum",
+        "https://localhost/decaustrum",
+        "https://127.0.0.1/decaustrum",
+        "https://10.0.0.1/decaustrum",
+        "https://user:password@hooks.example.com/decaustrum",
+        "https://hooks.example.com/decaustrum#secret",
     ],
 )
 def test_subscription_rejects_unsafe_url(url):
@@ -78,7 +78,7 @@ def test_subscription_rejects_ambiguous_event_selectors(
 ):
     with pytest.raises(ValidationError):
         WebhookSubscriptionCreateRequest(
-            url="https://hooks.example.com/regtrace",
+            url="https://hooks.example.com/decaustrum",
             event_types=event_types,
         )
 
@@ -91,7 +91,7 @@ def test_disabled_subscription_requires_disabled_at():
         WebhookSubscription(
             subscription_id=uuid4(),
             project_id=uuid4(),
-            url="https://hooks.example.com/regtrace",
+            url="https://hooks.example.com/decaustrum",
             event_types=["*"],
             status="DISABLED",
             created_at=NOW,
@@ -200,13 +200,13 @@ def test_webhook_headers_identify_and_sign_delivery():
         signing_secret=signing_secret,
     )
 
-    assert headers["X-RegTrace-Delivery-Id"] == str(delivery_id)
-    assert headers["X-RegTrace-Event-Id"] == str(event.event_id)
-    assert headers["X-RegTrace-Event-Type"] == event.event_type
+    assert headers["X-DecAustrum-Delivery-Id"] == str(delivery_id)
+    assert headers["X-DecAustrum-Event-Id"] == str(event.event_id)
+    assert headers["X-DecAustrum-Event-Type"] == event.event_type
     assert verify_webhook_signature(
         payload=payload,
-        timestamp=headers["X-RegTrace-Timestamp"],
-        signature=headers["X-RegTrace-Signature"],
+        timestamp=headers["X-DecAustrum-Timestamp"],
+        signature=headers["X-DecAustrum-Signature"],
         signing_secret=signing_secret,
         now=NOW,
     )
@@ -244,7 +244,7 @@ def test_webhook_destination_accepts_only_public_dns_results(
     )
 
     ensure_public_webhook_destination(
-        "https://hooks.example.com/regtrace"
+        "https://hooks.example.com/decaustrum"
     )
 
 
@@ -275,7 +275,7 @@ def test_webhook_destination_rejects_any_non_public_dns_result(
         match="private or reserved",
     ):
         ensure_public_webhook_destination(
-            "https://hooks.example.com/regtrace"
+            "https://hooks.example.com/decaustrum"
         )
 
 
@@ -294,7 +294,7 @@ def test_webhook_destination_hides_dns_resolution_errors(monkeypatch):
         match="could not be resolved",
     ) as error:
         ensure_public_webhook_destination(
-            "https://hooks.example.com/regtrace"
+            "https://hooks.example.com/decaustrum"
         )
 
     assert "sensitive resolver detail" not in str(error.value)
@@ -361,7 +361,7 @@ def test_real_transport_pins_validated_ip_preserves_tls_host_and_redirect(
     )
 
     response = UrllibWebhookTransport().send(
-        url="https://hooks.example.com/regtrace?source=test",
+        url="https://hooks.example.com/decaustrum?source=test",
         body=b"{}",
         headers={"Content-Type": "application/json"},
         timeout_seconds=2.5,
@@ -373,7 +373,7 @@ def test_real_transport_pins_validated_ip_preserves_tls_host_and_redirect(
     assert requests == [
         (
             "POST",
-            "/regtrace?source=test",
+            "/decaustrum?source=test",
             b"{}",
             {"Content-Type": "application/json"},
         )
@@ -403,7 +403,7 @@ def test_real_transport_rejects_private_resolution_before_connecting(
         match="private or reserved",
     ):
         UrllibWebhookTransport().send(
-            url="https://hooks.example.com/regtrace",
+            url="https://hooks.example.com/decaustrum",
             body=b"{}",
             headers={},
             timeout_seconds=2.5,

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-REGTRACE_VERSION = "0.1.0"
+DECAUSTRUM_VERSION = "0.1.0"
 HTTP_DURATION_BUCKETS = (
     0.005,
     0.01,
@@ -68,7 +68,7 @@ class _Histogram:
 
 
 class MetricsRegistry:
-    """Small bounded-cardinality Prometheus registry for RegTrace."""
+    """Small bounded-cardinality Prometheus registry for DecAustrum."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -155,43 +155,43 @@ class MetricsRegistry:
             )
 
         lines = [
-            "# HELP regtrace_build_info RegTrace build information.",
-            "# TYPE regtrace_build_info gauge",
+            "# HELP decaustrum_build_info DecAustrum build information.",
+            "# TYPE decaustrum_build_info gauge",
             (
-                "regtrace_build_info"
-                f'{_labels(version=REGTRACE_VERSION)} 1'
+                "decaustrum_build_info"
+                f'{_labels(version=DECAUSTRUM_VERSION)} 1'
             ),
             (
-                "# HELP regtrace_process_start_time_seconds "
+                "# HELP decaustrum_process_start_time_seconds "
                 "Process start time in Unix seconds."
             ),
-            "# TYPE regtrace_process_start_time_seconds gauge",
+            "# TYPE decaustrum_process_start_time_seconds gauge",
             (
-                "regtrace_process_start_time_seconds "
+                "decaustrum_process_start_time_seconds "
                 f"{_number(started_at)}"
             ),
             (
-                "# HELP regtrace_http_in_flight_requests "
+                "# HELP decaustrum_http_in_flight_requests "
                 "Current in-flight HTTP requests."
             ),
-            "# TYPE regtrace_http_in_flight_requests gauge",
-            f"regtrace_http_in_flight_requests {in_flight}",
+            "# TYPE decaustrum_http_in_flight_requests gauge",
+            f"decaustrum_http_in_flight_requests {in_flight}",
             (
-                "# HELP regtrace_ready Whether the API is ready to "
+                "# HELP decaustrum_ready Whether the API is ready to "
                 "serve traffic."
             ),
-            "# TYPE regtrace_ready gauge",
-            f"regtrace_ready {ready}",
+            "# TYPE decaustrum_ready gauge",
+            f"decaustrum_ready {ready}",
             (
-                "# HELP regtrace_http_requests_total Total HTTP "
+                "# HELP decaustrum_http_requests_total Total HTTP "
                 "requests."
             ),
-            "# TYPE regtrace_http_requests_total counter",
+            "# TYPE decaustrum_http_requests_total counter",
         ]
 
         for (method, route, status), value in sorted(requests.items()):
             lines.append(
-                "regtrace_http_requests_total"
+                "decaustrum_http_requests_total"
                 f"{_labels(method=method, route=route, status=status)} "
                 f"{value}"
             )
@@ -199,11 +199,11 @@ class MetricsRegistry:
         lines.extend(
             [
                 (
-                    "# HELP regtrace_http_request_duration_seconds "
+                    "# HELP decaustrum_http_request_duration_seconds "
                     "HTTP request duration in seconds."
                 ),
                 (
-                    "# TYPE regtrace_http_request_duration_seconds "
+                    "# TYPE decaustrum_http_request_duration_seconds "
                     "histogram"
                 ),
             ]
@@ -216,23 +216,23 @@ class MetricsRegistry:
                 strict=True,
             ):
                 lines.append(
-                    "regtrace_http_request_duration_seconds_bucket"
+                    "decaustrum_http_request_duration_seconds_bucket"
                     f"{_labels(method=method, route=route, le=str(boundary))} "
                     f"{count}"
                 )
 
             lines.append(
-                "regtrace_http_request_duration_seconds_bucket"
+                "decaustrum_http_request_duration_seconds_bucket"
                 f"{_labels(method=method, route=route, le='+Inf')} "
                 f"{histogram.count}"
             )
             lines.append(
-                "regtrace_http_request_duration_seconds_sum"
+                "decaustrum_http_request_duration_seconds_sum"
                 f"{_labels(method=method, route=route)} "
                 f"{_number(histogram.total)}"
             )
             lines.append(
-                "regtrace_http_request_duration_seconds_count"
+                "decaustrum_http_request_duration_seconds_count"
                 f"{_labels(method=method, route=route)} "
                 f"{histogram.count}"
             )
@@ -240,27 +240,27 @@ class MetricsRegistry:
         lines.extend(
             [
                 (
-                    "# HELP regtrace_security_events_total Security "
+                    "# HELP decaustrum_security_events_total Security "
                     "control events."
                 ),
-                "# TYPE regtrace_security_events_total counter",
+                "# TYPE decaustrum_security_events_total counter",
             ]
         )
 
         for event, value in sorted(security_events.items()):
             lines.append(
-                "regtrace_security_events_total"
+                "decaustrum_security_events_total"
                 f"{_labels(event=event)} {value}"
             )
 
         lines.extend(
             [
                 (
-                    "# HELP regtrace_authorization_decisions_total "
+                    "# HELP decaustrum_authorization_decisions_total "
                     "Authorization responses by decision."
                 ),
                 (
-                    "# TYPE regtrace_authorization_decisions_total "
+                    "# TYPE decaustrum_authorization_decisions_total "
                     "counter"
                 ),
             ]
@@ -270,7 +270,7 @@ class MetricsRegistry:
             authorization_decisions.items()
         ):
             lines.append(
-                "regtrace_authorization_decisions_total"
+                "decaustrum_authorization_decisions_total"
                 f"{_labels(decision=decision)} {value}"
             )
 
@@ -322,26 +322,26 @@ class JsonLogFormatter(logging.Formatter):
 
 
 def configure_json_logging(level: str = "INFO") -> None:
-    regtrace_logger = logging.getLogger("regtrace")
+    decaustrum_logger = logging.getLogger("decaustrum")
     handler = next(
         (
             item
-            for item in regtrace_logger.handlers
-            if getattr(item, "_regtrace_json_handler", False)
+            for item in decaustrum_logger.handlers
+            if getattr(item, "_decaustrum_json_handler", False)
         ),
         None,
     )
 
     if handler is None:
         handler = logging.StreamHandler()
-        handler._regtrace_json_handler = True  # type: ignore[attr-defined]
-        regtrace_logger.addHandler(handler)
+        handler._decaustrum_json_handler = True  # type: ignore[attr-defined]
+        decaustrum_logger.addHandler(handler)
 
     handler.setFormatter(JsonLogFormatter())
-    regtrace_logger.setLevel(level)
-    regtrace_logger.propagate = False
+    decaustrum_logger.setLevel(level)
+    decaustrum_logger.propagate = False
 
-    # RegTrace emits its own access records without raw paths, query
+    # DecAustrum emits its own access records without raw paths, query
     # strings, headers, or bodies.
     logging.getLogger("uvicorn.access").disabled = True
 
@@ -349,6 +349,6 @@ def configure_json_logging(level: str = "INFO") -> None:
 __all__ = [
     "JsonLogFormatter",
     "MetricsRegistry",
-    "REGTRACE_VERSION",
+    "DECAUSTRUM_VERSION",
     "configure_json_logging",
 ]

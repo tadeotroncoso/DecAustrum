@@ -115,7 +115,7 @@ def test_authenticate_admin_rejects_invalid_key(
 
 def test_execution_grant_secret_must_be_configured(monkeypatch):
     monkeypatch.delenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         raising=False,
     )
 
@@ -125,7 +125,7 @@ def test_execution_grant_secret_must_be_configured(monkeypatch):
 
 def test_execution_grant_secret_must_be_strong(monkeypatch):
     monkeypatch.setenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         "short",
     )
 
@@ -135,6 +135,6 @@ def test_execution_grant_secret_must_be_strong(monkeypatch):
 
 def test_execution_grant_secret_is_returned(monkeypatch):
     secret = "configured-execution-grant-secret-at-least-32-bytes"
-    monkeypatch.setenv("REGTRACE_EXECUTION_GRANT_SECRET", secret)
+    monkeypatch.setenv("DECAUSTRUM_EXECUTION_GRANT_SECRET", secret)
 
     assert get_configured_execution_grant_secret() == secret

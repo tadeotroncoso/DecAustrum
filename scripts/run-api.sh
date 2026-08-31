@@ -6,7 +6,7 @@ virtual_python="$repository_root/.venv/bin/python"
 environment_file="$repository_root/.env"
 
 if [ ! -x "$virtual_python" ]; then
-    echo "Run scripts/bootstrap.sh before starting RegTrace." >&2
+    echo "Run scripts/bootstrap.sh before starting DecAustrum." >&2
     exit 1
 fi
 

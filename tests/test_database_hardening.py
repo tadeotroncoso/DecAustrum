@@ -4,7 +4,7 @@ from app.evidence_store import EvidenceStore
 
 
 def test_database_enables_operational_safety_pragmas(tmp_path):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
 
     with store.database.connect() as connection:
@@ -28,7 +28,7 @@ def test_database_enables_operational_safety_pragmas(tmp_path):
 
 
 def test_initialized_database_is_ready(tmp_path):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
 
     assert store.check_readiness() is True

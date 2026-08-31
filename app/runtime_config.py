@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 
 class RuntimeConfigurationError(RuntimeError):
-    """Raised when RegTrace runtime hardening is misconfigured."""
+    """Raised when DecAustrum runtime hardening is misconfigured."""
 
 
 def _parse_bool(
@@ -112,7 +112,7 @@ class RuntimeSettings:
     ) -> "RuntimeSettings":
         values = environment if environment is not None else os.environ
         runtime_environment = values.get(
-            "REGTRACE_ENVIRONMENT",
+            "DECAUSTRUM_ENVIRONMENT",
             "development",
         ).strip().lower()
         default_hosts = (
@@ -130,80 +130,80 @@ class RuntimeSettings:
             environment=runtime_environment,
             trusted_hosts=_parse_csv(
                 values,
-                "REGTRACE_TRUSTED_HOSTS",
+                "DECAUSTRUM_TRUSTED_HOSTS",
                 default_hosts,
             ),
             cors_allowed_origins=_parse_csv(
                 values,
-                "REGTRACE_CORS_ALLOWED_ORIGINS",
+                "DECAUSTRUM_CORS_ALLOWED_ORIGINS",
                 (),
             ),
             enforce_https=_parse_bool(
                 values,
-                "REGTRACE_ENFORCE_HTTPS",
+                "DECAUSTRUM_ENFORCE_HTTPS",
                 runtime_environment == "production",
             ),
             expose_docs=_parse_bool(
                 values,
-                "REGTRACE_EXPOSE_DOCS",
+                "DECAUSTRUM_EXPOSE_DOCS",
                 runtime_environment != "production",
             ),
             rate_limit_enabled=_parse_bool(
                 values,
-                "REGTRACE_RATE_LIMIT_ENABLED",
+                "DECAUSTRUM_RATE_LIMIT_ENABLED",
                 True,
             ),
             max_request_body_bytes=_parse_int(
                 values,
-                "REGTRACE_MAX_REQUEST_BODY_BYTES",
+                "DECAUSTRUM_MAX_REQUEST_BODY_BYTES",
                 1_048_576,
                 minimum=1,
                 maximum=100 * 1024 * 1024,
             ),
             rate_limit_window_seconds=_parse_int(
                 values,
-                "REGTRACE_RATE_LIMIT_WINDOW_SECONDS",
+                "DECAUSTRUM_RATE_LIMIT_WINDOW_SECONDS",
                 60,
                 minimum=1,
                 maximum=3_600,
             ),
             authorization_rate_limit=_parse_int(
                 values,
-                "REGTRACE_AUTHORIZATION_RATE_LIMIT",
+                "DECAUSTRUM_AUTHORIZATION_RATE_LIMIT",
                 300,
                 minimum=1,
                 maximum=1_000_000,
             ),
             tenant_rate_limit=_parse_int(
                 values,
-                "REGTRACE_TENANT_RATE_LIMIT",
+                "DECAUSTRUM_TENANT_RATE_LIMIT",
                 600,
                 minimum=1,
                 maximum=1_000_000,
             ),
             admin_rate_limit=_parse_int(
                 values,
-                "REGTRACE_ADMIN_RATE_LIMIT",
+                "DECAUSTRUM_ADMIN_RATE_LIMIT",
                 300,
                 minimum=1,
                 maximum=1_000_000,
             ),
             approval_ttl_seconds=_parse_int(
                 values,
-                "REGTRACE_APPROVAL_TTL_SECONDS",
+                "DECAUSTRUM_APPROVAL_TTL_SECONDS",
                 86_400,
                 minimum=60,
                 maximum=2_592_000,
             ),
             execution_grant_ttl_seconds=_parse_int(
                 values,
-                "REGTRACE_EXECUTION_GRANT_TTL_SECONDS",
+                "DECAUSTRUM_EXECUTION_GRANT_TTL_SECONDS",
                 300,
                 minimum=30,
                 maximum=3_600,
             ),
             log_level=values.get(
-                "REGTRACE_LOG_LEVEL",
+                "DECAUSTRUM_LOG_LEVEL",
                 "INFO",
             ).strip().upper(),
         )
@@ -215,13 +215,13 @@ class RuntimeSettings:
             "production",
         }:
             raise RuntimeConfigurationError(
-                "REGTRACE_ENVIRONMENT must be development, test, "
+                "DECAUSTRUM_ENVIRONMENT must be development, test, "
                 "or production."
             )
 
         if not self.trusted_hosts:
             raise RuntimeConfigurationError(
-                "REGTRACE_TRUSTED_HOSTS must contain at least one host."
+                "DECAUSTRUM_TRUSTED_HOSTS must contain at least one host."
             )
 
         for host in self.trusted_hosts:
@@ -245,7 +245,7 @@ class RuntimeSettings:
 
         if self.environment == "production" and not self.enforce_https:
             raise RuntimeConfigurationError(
-                "REGTRACE_ENFORCE_HTTPS must be enabled in production."
+                "DECAUSTRUM_ENFORCE_HTTPS must be enabled in production."
             )
 
         if not 1 <= self.max_request_body_bytes <= 100 * 1024 * 1024:
@@ -303,7 +303,7 @@ class RuntimeSettings:
 
         if self.log_level not in logging.getLevelNamesMapping():
             raise RuntimeConfigurationError(
-                "REGTRACE_LOG_LEVEL is not a valid logging level."
+                "DECAUSTRUM_LOG_LEVEL is not a valid logging level."
             )
 
     def _validate_origin(self, origin: str) -> None:
@@ -347,18 +347,18 @@ class RuntimeSettings:
 
         if len(project_api_key.encode("utf-8")) < 32:
             raise RuntimeConfigurationError(
-                "REGTRACE_API_KEY must contain at least 32 bytes in "
+                "DECAUSTRUM_API_KEY must contain at least 32 bytes in "
                 "production."
             )
 
         if admin_api_key is None:
             raise RuntimeConfigurationError(
-                "REGTRACE_ADMIN_API_KEY must be configured in production."
+                "DECAUSTRUM_ADMIN_API_KEY must be configured in production."
             )
 
         if len(admin_api_key.encode("utf-8")) < 32:
             raise RuntimeConfigurationError(
-                "REGTRACE_ADMIN_API_KEY must contain at least 32 bytes "
+                "DECAUSTRUM_ADMIN_API_KEY must contain at least 32 bytes "
                 "in production."
             )
 
@@ -369,13 +369,13 @@ class RuntimeSettings:
 
         if execution_grant_secret is None:
             raise RuntimeConfigurationError(
-                "REGTRACE_EXECUTION_GRANT_SECRET must be configured "
+                "DECAUSTRUM_EXECUTION_GRANT_SECRET must be configured "
                 "in production."
             )
 
         if len(execution_grant_secret.encode("utf-8")) < 32:
             raise RuntimeConfigurationError(
-                "REGTRACE_EXECUTION_GRANT_SECRET must contain at "
+                "DECAUSTRUM_EXECUTION_GRANT_SECRET must contain at "
                 "least 32 bytes in production."
             )
 

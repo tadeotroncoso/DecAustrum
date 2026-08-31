@@ -1,13 +1,13 @@
-name: regtrace
+name: decaustrum
 
-x-regtrace-service: &regtrace-service
+x-decaustrum-service: &decaustrum-service
   build:
     context: .
-  image: regtrace-backend:0.1.0
+  image: decaustrum-backend:0.1.0
   env_file:
     - .env
   volumes:
-    - regtrace-data:/app/data
+    - decaustrum-data:/app/data
   read_only: true
   tmpfs:
     - /tmp:size=16m,mode=1777
@@ -20,12 +20,12 @@ x-regtrace-service: &regtrace-service
 
 services:
   api:
-    <<: *regtrace-service
+    <<: *decaustrum-service
     ports:
-      - "127.0.0.1:${REGTRACE_PORT:-8000}:8000"
+      - "127.0.0.1:${DECAUSTRUM_PORT:-8000}:8000"
 
   webhook-worker:
-    <<: *regtrace-service
+    <<: *decaustrum-service
     command:
       - python
       - -m
@@ -37,5 +37,5 @@ services:
       disable: true
 
 volumes:
-  regtrace-data:
-    name: regtrace-data
+  decaustrum-data:
+    name: decaustrum-data

@@ -5,21 +5,21 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from regtrace import (
+from decaustrum import (
     ActionDeniedError,
     ApprovalGrant,
     ApprovalRequiredError,
-    AsyncRegTraceClient,
+    AsyncDecAustrumClient,
     AuthenticationError,
     ConflictError,
     NotFoundError,
     RateLimitError,
-    RegTraceClient,
-    RegTraceGuard,
-    RegTraceProtocolError,
-    RegTraceTransportError,
+    DecAustrumClient,
+    DecAustrumGuard,
+    DecAustrumProtocolError,
+    DecAustrumTransportError,
     ServerError,
-    ValidationError as RegTraceValidationError,
+    ValidationError as DecAustrumValidationError,
 )
 
 
@@ -60,12 +60,12 @@ def approval_payload(status: str = "PENDING") -> dict:
     }
 
 
-def sdk_client(handler) -> tuple[RegTraceClient, httpx.Client]:
+def sdk_client(handler) -> tuple[DecAustrumClient, httpx.Client]:
     http_client = httpx.Client(transport=httpx.MockTransport(handler))
     return (
-        RegTraceClient(
+        DecAustrumClient(
             api_key="project-key",
-            base_url="https://regtrace.example",
+            base_url="https://decaustrum.example",
             http_client=http_client,
         ),
         http_client,
@@ -75,12 +75,12 @@ def sdk_client(handler) -> tuple[RegTraceClient, httpx.Client]:
 def test_sync_client_sends_auth_idempotency_and_parses_decision():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == (
-            "https://regtrace.example/v1/authorize"
+            "https://decaustrum.example/v1/authorize"
         )
         assert request.headers["X-API-Key"] == "project-key"
         assert request.headers["Idempotency-Key"] == "request-42"
         assert request.headers["User-Agent"] == (
-            "regtrace-python/0.1.0"
+            "decaustrum-python/0.1.0"
         )
         assert request.headers["X-Request-ID"]
         return httpx.Response(200, json=decision_payload())
@@ -111,7 +111,7 @@ def test_sync_client_sends_auth_idempotency_and_parses_decision():
         (403, AuthenticationError),
         (404, NotFoundError),
         (409, ConflictError),
-        (422, RegTraceValidationError),
+        (422, DecAustrumValidationError),
         (429, RateLimitError),
         (503, ServerError),
     ],
@@ -159,7 +159,7 @@ def test_sdk_maps_fastapi_validation_list_without_losing_details():
 
     client, http_client = sdk_client(handler)
     try:
-        with pytest.raises(RegTraceValidationError) as captured:
+        with pytest.raises(DecAustrumValidationError) as captured:
             client.get_decision(DECISION_ID)
     finally:
         http_client.close()
@@ -176,7 +176,7 @@ def test_sdk_rejects_success_response_outside_contract():
 
     client, http_client = sdk_client(handler)
     try:
-        with pytest.raises(RegTraceProtocolError):
+        with pytest.raises(DecAustrumProtocolError):
             client.get_decision(DECISION_ID)
     finally:
         http_client.close()
@@ -188,7 +188,7 @@ def test_sdk_wraps_network_failures():
 
     client, http_client = sdk_client(handler)
     try:
-        with pytest.raises(RegTraceTransportError):
+        with pytest.raises(DecAustrumTransportError):
             client.health()
     finally:
         http_client.close()
@@ -242,7 +242,7 @@ def test_guard_never_calls_operation_without_allow(decision, error_type):
         return httpx.Response(200, json=decision_payload(decision))
 
     client, http_client = sdk_client(handler)
-    guard = RegTraceGuard(client)
+    guard = DecAustrumGuard(client)
     operation_calls = 0
 
     def operation():
@@ -268,7 +268,7 @@ def test_guard_calls_operation_once_after_allow():
         return httpx.Response(200, json=decision_payload())
 
     client, http_client = sdk_client(handler)
-    guard = RegTraceGuard(client)
+    guard = DecAustrumGuard(client)
     operation_calls = 0
 
     def operation() -> str:
@@ -313,7 +313,7 @@ def test_guard_consumes_grant_before_calling_approved_operation():
         )
 
     client, http_client = sdk_client(handler)
-    guard = RegTraceGuard(client)
+    guard = DecAustrumGuard(client)
 
     def operation() -> str:
         assert consumed is True
@@ -345,9 +345,9 @@ def test_async_client_uses_same_typed_contract():
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(handler)
         ) as http_client:
-            client = AsyncRegTraceClient(
+            client = AsyncDecAustrumClient(
                 api_key="async-key",
-                base_url="https://regtrace.example",
+                base_url="https://decaustrum.example",
                 http_client=http_client,
             )
             return await client.authorize(
@@ -363,10 +363,10 @@ def test_async_client_uses_same_typed_contract():
 
 
 def test_sdk_environment_constructor(monkeypatch):
-    monkeypatch.setenv("REGTRACE_API_KEY", "environment-key")
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", "environment-key")
     monkeypatch.setenv(
-        "REGTRACE_BASE_URL",
-        "https://regtrace.internal/prefix/",
+        "DECAUSTRUM_BASE_URL",
+        "https://decaustrum.internal/prefix/",
     )
     http_client = httpx.Client(
         transport=httpx.MockTransport(
@@ -377,7 +377,7 @@ def test_sdk_environment_constructor(monkeypatch):
         )
     )
     try:
-        client = RegTraceClient.from_environment(
+        client = DecAustrumClient.from_environment(
             http_client=http_client
         )
         assert client.health().ready is True

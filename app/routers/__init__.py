@@ -1,1 +1,1 @@
-"""FastAPI routers grouped by RegTrace domain."""
+"""FastAPI routers grouped by DecAustrum domain."""

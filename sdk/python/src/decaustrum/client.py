@@ -1,4 +1,4 @@
-"""Synchronous client for the RegTrace runtime API."""
+"""Synchronous client for the DecAustrum runtime API."""
 
 import os
 import time
@@ -7,7 +7,7 @@ from uuid import UUID
 
 import httpx
 
-from regtrace._http import (
+from decaustrum._http import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT,
     build_headers,
@@ -23,11 +23,11 @@ from regtrace._http import (
     normalize_uuid,
     parse_response,
 )
-from regtrace.errors import (
+from decaustrum.errors import (
     ApprovalWaitTimeoutError,
-    RegTraceTransportError,
+    DecAustrumTransportError,
 )
-from regtrace.models import (
+from decaustrum.models import (
     ApprovalGrant,
     ApprovalPage,
     ApprovalRecord,
@@ -38,8 +38,8 @@ from regtrace.models import (
 )
 
 
-class RegTraceClient:
-    """Typed synchronous client scoped to one RegTrace project key."""
+class DecAustrumClient:
+    """Typed synchronous client scoped to one DecAustrum project key."""
 
     def __init__(
         self,
@@ -64,21 +64,21 @@ class RegTraceClient:
         *,
         timeout: float = DEFAULT_TIMEOUT,
         http_client: httpx.Client | None = None,
-    ) -> "RegTraceClient":
-        api_key = os.getenv("REGTRACE_API_KEY")
+    ) -> "DecAustrumClient":
+        api_key = os.getenv("DECAUSTRUM_API_KEY")
         if not api_key:
-            raise ValueError("REGTRACE_API_KEY must be configured")
+            raise ValueError("DECAUSTRUM_API_KEY must be configured")
         return cls(
             api_key=api_key,
             base_url=os.getenv(
-                "REGTRACE_BASE_URL",
+                "DECAUSTRUM_BASE_URL",
                 DEFAULT_BASE_URL,
             ),
             timeout=timeout,
             http_client=http_client,
         )
 
-    def __enter__(self) -> "RegTraceClient":
+    def __enter__(self) -> "DecAustrumClient":
         self._ensure_open()
         return self
 
@@ -302,18 +302,18 @@ class RegTraceClient:
                 params=params,
             )
         except httpx.TimeoutException as exc:
-            raise RegTraceTransportError(
-                f"RegTrace request timed out after "
+            raise DecAustrumTransportError(
+                f"DecAustrum request timed out after "
                 f"{self._timeout:g} seconds."
             ) from exc
         except httpx.RequestError as exc:
-            raise RegTraceTransportError(
-                "RegTrace could not be reached."
+            raise DecAustrumTransportError(
+                "DecAustrum could not be reached."
             ) from exc
 
     def _ensure_open(self) -> None:
         if self._closed:
-            raise RuntimeError("RegTraceClient is closed")
+            raise RuntimeError("DecAustrumClient is closed")
 
 
-__all__ = ["RegTraceClient"]
+__all__ = ["DecAustrumClient"]

@@ -8,14 +8,14 @@ from uuid import UUID, uuid4
 
 import httpx
 
-from regtrace._version import __version__
-from regtrace.errors import (
+from decaustrum._version import __version__
+from decaustrum.errors import (
     AuthenticationError,
     ConflictError,
     NotFoundError,
     RateLimitError,
-    RegTraceAPIError,
-    RegTraceProtocolError,
+    DecAustrumAPIError,
+    DecAustrumProtocolError,
     ServerError,
     ValidationError,
 )
@@ -133,7 +133,7 @@ def build_headers(
 ) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
-        "User-Agent": f"regtrace-python/{SDK_VERSION}",
+        "User-Agent": f"decaustrum-python/{SDK_VERSION}",
         "X-API-Key": api_key,
         "X-Request-ID": str(uuid4()),
     }
@@ -160,20 +160,20 @@ def _error_payload(response: httpx.Response) -> tuple[str, str, Any]:
         message = (
             raw_message
             if isinstance(raw_message, str) and raw_message
-            else "RegTrace rejected the request."
+            else "DecAustrum rejected the request."
         )
         return code, message, deepcopy(dict(detail))
 
     if isinstance(detail, list):
         return (
             "validation_error",
-            "RegTrace rejected the request as invalid.",
+            "DecAustrum rejected the request as invalid.",
             deepcopy(detail),
         )
 
     return (
         "http_error",
-        response.reason_phrase or "RegTrace rejected the request.",
+        response.reason_phrase or "DecAustrum rejected the request.",
         deepcopy(detail),
     )
 
@@ -183,7 +183,7 @@ def raise_for_status(response: httpx.Response) -> None:
         return
 
     code, message, details = _error_payload(response)
-    error_type: type[RegTraceAPIError]
+    error_type: type[DecAustrumAPIError]
 
     if response.status_code in {401, 403}:
         error_type = AuthenticationError
@@ -198,7 +198,7 @@ def raise_for_status(response: httpx.Response) -> None:
     elif response.status_code >= 500:
         error_type = ServerError
     else:
-        error_type = RegTraceAPIError
+        error_type = DecAustrumAPIError
 
     raise error_type(
         status_code=response.status_code,
@@ -219,20 +219,20 @@ def parse_response(
     try:
         payload = response.json()
     except (ValueError, json.JSONDecodeError) as exc:
-        raise RegTraceProtocolError(
-            "RegTrace returned a non-JSON success response."
+        raise DecAustrumProtocolError(
+            "DecAustrum returned a non-JSON success response."
         ) from exc
 
     if not isinstance(payload, Mapping):
-        raise RegTraceProtocolError(
-            "RegTrace returned a success response that is not an object."
+        raise DecAustrumProtocolError(
+            "DecAustrum returned a success response that is not an object."
         )
 
     try:
         return parser(payload)
     except (KeyError, TypeError, ValueError) as exc:
-        raise RegTraceProtocolError(
-            "RegTrace returned a response that does not match "
+        raise DecAustrumProtocolError(
+            "DecAustrum returned a response that does not match "
             "the SDK contract."
         ) from exc
 

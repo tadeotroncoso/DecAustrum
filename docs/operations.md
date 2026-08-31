@@ -1,4 +1,4 @@
-# RegTrace security and operations
+# DecAustrum security and operations
 
 This document describes the runtime controls built into the local MVP and the
 minimum deployment contract around them. Application defaults are convenient
@@ -9,24 +9,24 @@ security-critical configuration is missing or weak.
 
 | Variable | Development default | Production requirement |
 | --- | --- | --- |
-| `REGTRACE_ENVIRONMENT` | `development` | Set to `production`. |
-| `REGTRACE_API_KEY` | No default | Required; at least 32 UTF-8 bytes. |
-| `REGTRACE_ADMIN_API_KEY` | No default | Required; at least 32 bytes and different from the project key. |
-| `REGTRACE_WEBHOOK_MASTER_SECRET` | No default | Required before provisioning or delivering webhooks; at least 32 bytes. |
-| `REGTRACE_EXECUTION_GRANT_SECRET` | No default | Required to approve or consume grants; at least 32 bytes. Production startup fails without it, and it must differ from project and administrator keys. |
-| `REGTRACE_TRUSTED_HOSTS` | Local hosts and `testserver` | Required comma-separated exact hosts or controlled `*.example.com` patterns. `*` is rejected. |
-| `REGTRACE_CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated exact HTTPS origins. `*` and origins containing paths or credentials are rejected. |
-| `REGTRACE_ENFORCE_HTTPS` | `false` | Defaults to `true` and cannot be disabled. |
-| `REGTRACE_EXPOSE_DOCS` | `true` | Defaults to `false`. |
-| `REGTRACE_MAX_REQUEST_BODY_BYTES` | `1048576` | Set to the smallest limit clients need; accepted range is 1 byte to 100 MiB. |
-| `REGTRACE_APPROVAL_TTL_SECONDS` | `86400` | Approval window; 60 to 2,592,000 seconds. |
-| `REGTRACE_EXECUTION_GRANT_TTL_SECONDS` | `300` | One-time execution window after approval; 30 to 3,600 seconds. |
-| `REGTRACE_RATE_LIMIT_ENABLED` | `true` | Keep enabled. |
-| `REGTRACE_RATE_LIMIT_WINDOW_SECONDS` | `60` | 1 to 3,600 seconds. |
-| `REGTRACE_AUTHORIZATION_RATE_LIMIT` | `300` | Requests per credential and client address per window for `/v1/authorize`. |
-| `REGTRACE_TENANT_RATE_LIMIT` | `600` | Requests per credential and client address per window for other tenant routes. |
-| `REGTRACE_ADMIN_RATE_LIMIT` | `300` | Requests per administrator credential and client address per window for admin routes and metrics. |
-| `REGTRACE_LOG_LEVEL` | `INFO` | Use `INFO`, `WARNING`, or `ERROR` normally. |
+| `DECAUSTRUM_ENVIRONMENT` | `development` | Set to `production`. |
+| `DECAUSTRUM_API_KEY` | No default | Required; at least 32 UTF-8 bytes. |
+| `DECAUSTRUM_ADMIN_API_KEY` | No default | Required; at least 32 bytes and different from the project key. |
+| `DECAUSTRUM_WEBHOOK_MASTER_SECRET` | No default | Required before provisioning or delivering webhooks; at least 32 bytes. |
+| `DECAUSTRUM_EXECUTION_GRANT_SECRET` | No default | Required to approve or consume grants; at least 32 bytes. Production startup fails without it, and it must differ from project and administrator keys. |
+| `DECAUSTRUM_TRUSTED_HOSTS` | Local hosts and `testserver` | Required comma-separated exact hosts or controlled `*.example.com` patterns. `*` is rejected. |
+| `DECAUSTRUM_CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated exact HTTPS origins. `*` and origins containing paths or credentials are rejected. |
+| `DECAUSTRUM_ENFORCE_HTTPS` | `false` | Defaults to `true` and cannot be disabled. |
+| `DECAUSTRUM_EXPOSE_DOCS` | `true` | Defaults to `false`. |
+| `DECAUSTRUM_MAX_REQUEST_BODY_BYTES` | `1048576` | Set to the smallest limit clients need; accepted range is 1 byte to 100 MiB. |
+| `DECAUSTRUM_APPROVAL_TTL_SECONDS` | `86400` | Approval window; 60 to 2,592,000 seconds. |
+| `DECAUSTRUM_EXECUTION_GRANT_TTL_SECONDS` | `300` | One-time execution window after approval; 30 to 3,600 seconds. |
+| `DECAUSTRUM_RATE_LIMIT_ENABLED` | `true` | Keep enabled. |
+| `DECAUSTRUM_RATE_LIMIT_WINDOW_SECONDS` | `60` | 1 to 3,600 seconds. |
+| `DECAUSTRUM_AUTHORIZATION_RATE_LIMIT` | `300` | Requests per credential and client address per window for `/v1/authorize`. |
+| `DECAUSTRUM_TENANT_RATE_LIMIT` | `600` | Requests per credential and client address per window for other tenant routes. |
+| `DECAUSTRUM_ADMIN_RATE_LIMIT` | `300` | Requests per administrator credential and client address per window for admin routes and metrics. |
+| `DECAUSTRUM_LOG_LEVEL` | `INFO` | Use `INFO`, `WARNING`, or `ERROR` normally. |
 
 Boolean values accept `true/false`, `yes/no`, `on/off`, or `1/0`. Invalid
 values stop application construction instead of silently weakening a control.
@@ -67,7 +67,7 @@ reverse proxy.
 ## Approval execution runbook
 
 An authorization response with `REQUIRE_APPROVAL` creates a pending request
-whose `expires_at` is controlled by `REGTRACE_APPROVAL_TTL_SECONDS`.
+whose `expires_at` is controlled by `DECAUSTRUM_APPROVAL_TTL_SECONDS`.
 
 1. Review and approve with
    `POST /v1/approvals/{decision_id}/approve`.
@@ -82,16 +82,16 @@ whose `expires_at` is controlled by `REGTRACE_APPROVAL_TTL_SECONDS`.
    action when a fresh decision is needed.
 
 Rejected or expired approvals never receive a grant. An approved grant may be
-consumed once and cannot be reset. RegTrace stores only its SHA-256 hash; the
+consumed once and cannot be reset. DecAustrum stores only its SHA-256 hash; the
 raw credential appears only in approval responses. Grant issue, consumption,
 expiry, and approval expiry are visible in immutable administrative audit and
 the transactional webhook outbox without secret material.
 
-Approved rows created by an older RegTrace version are migrated as historical
+Approved rows created by an older DecAustrum version are migrated as historical
 records but never receive a grant retroactively. Re-authorize those actions so
 the new approval and grant are created under the closed flow.
 
-Changing `REGTRACE_EXECUTION_GRANT_SECRET` immediately invalidates every
+Changing `DECAUSTRUM_EXECUTION_GRANT_SECRET` immediately invalidates every
 unconsumed token signed with the previous value. For a planned rotation, either
 wait longer than the configured maximum grant TTL after stopping new approval
 issuance, or explicitly accept that outstanding grants will be invalidated.
@@ -106,8 +106,8 @@ Install the local package with:
 python -m pip install -e .\sdk\python
 ```
 
-Configure the application runtime with a project-scoped `REGTRACE_API_KEY` and
-`REGTRACE_BASE_URL`. Never give an SDK runtime the administrator API key,
+Configure the application runtime with a project-scoped `DECAUSTRUM_API_KEY` and
+`DECAUSTRUM_BASE_URL`. Never give an SDK runtime the administrator API key,
 webhook master secret, or server-side execution-grant signing secret.
 
 Use a stable business idempotency key for authorization calls. Do not configure
@@ -162,7 +162,7 @@ administrator secret.
 
 ## Structured logs
 
-RegTrace application and webhook-worker logs are one JSON object per line.
+DecAustrum application and webhook-worker logs are one JSON object per line.
 HTTP completion records use bounded fields such as request ID, method, route
 template, status, duration, and authenticated principal type. Worker records
 contain only delivery outcome counts. Exceptions record their type but not the
@@ -170,7 +170,7 @@ exception message.
 
 The application does not log request or response bodies, API keys, webhook
 secrets, authorization contexts, query strings, project identifiers, or raw
-resource paths. Uvicorn's raw access logger is disabled when RegTrace logging is
+resource paths. Uvicorn's raw access logger is disabled when DecAustrum logging is
 configured because the middleware emits the safer access record. Ship stdout
 and stderr to a centralized, access-controlled log system and alert on:
 
@@ -198,7 +198,7 @@ the repository layer.
 
 ## Reproducible build and release contract
 
-RegTrace has one declared Python minor version and two dependency sets:
+DecAustrum has one declared Python minor version and two dependency sets:
 
 - `.python-version` pins the developer and CI interpreter;
 - `requirements/runtime.lock` is the exact API and worker dependency graph;
@@ -227,6 +227,17 @@ wheel in a temporary directory. The backend's deployable artifact is the
 container image rather than a backend wheel. Existing Bandit false positives
 are suppressed only at their exact reviewed source lines and test IDs; there is
 no global Bandit baseline or disabled rule that could hide a new finding.
+
+The local and CI secret gates intentionally scan the current publishable tree.
+DecAustrum does not add a second continuously maintained historical scanner at
+this stage. Before the first publication, scan the full reachable Git history
+once. Once the repository is public on GitHub, rely on GitHub Secret Scanning
+for continuing full-history coverage, enable Push Protection, and treat every
+alert or bypass as release-blocking. Hosted pattern matching has documented
+limits, so it complements rather than replaces the local gate and reviewed
+baseline. If a real credential ever reaches a commit, rotate or revoke it
+immediately; deleting it from the current tree or rewriting Git history does
+not make the credential safe.
 
 `Dockerfile` pins the complete official Python image reference, including its
 digest, installs only `requirements/runtime.lock`, runs as an unprivileged user,
@@ -258,8 +269,8 @@ When intentionally updating dependencies:
 
 ## Production deployment checklist
 
-1. Put RegTrace behind a reverse proxy or load balancer that terminates TLS.
-2. Set `REGTRACE_ENVIRONMENT=production`, exact trusted hosts, and only the
+1. Put DecAustrum behind a reverse proxy or load balancer that terminates TLS.
+2. Set `DECAUSTRUM_ENVIRONMENT=production`, exact trusted hosts, and only the
    required HTTPS CORS origins.
 3. Generate distinct high-entropy project, administrator, webhook, and
    execution-grant secrets and inject them from a secret manager.

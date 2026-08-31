@@ -65,7 +65,7 @@ def prepare_delivery(tmp_path):
     subscription = WebhookSubscription(
         subscription_id=uuid4(),
         project_id=project.project_id,
-        url="https://hooks.example.com/regtrace",
+        url="https://hooks.example.com/decaustrum",
         event_types=["authorization.created"],
         created_at=NOW,
         updated_at=NOW,
@@ -134,13 +134,13 @@ def test_successful_dispatch_signs_and_records_attempt(tmp_path):
     assert len(attempts) == 1
     assert attempts[0].outcome == "SUCCESS"
     assert attempts[0].status_code == 204
-    assert request["headers"]["X-RegTrace-Event-Id"] == str(
+    assert request["headers"]["X-DecAustrum-Event-Id"] == str(
         event.event_id
     )
     assert verify_webhook_signature(
         payload=request["body"],
-        timestamp=request["headers"]["X-RegTrace-Timestamp"],
-        signature=request["headers"]["X-RegTrace-Signature"],
+        timestamp=request["headers"]["X-DecAustrum-Timestamp"],
+        signature=request["headers"]["X-DecAustrum-Signature"],
         signing_secret=signing_secret,
         now=NOW,
     )

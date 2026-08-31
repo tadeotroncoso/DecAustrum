@@ -194,7 +194,7 @@ class ApprovalRepository:
         connection: sqlite3.Connection,
         project_id: UUID,
         expired_at: datetime,
-        resolved_by: str = "regtrace-expiration",
+        resolved_by: str = "decaustrum-expiration",
     ) -> list[tuple[ApprovalRecord, ApprovalRecord]]:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(

@@ -9,30 +9,30 @@ from app.evidence_store import EvidenceStore
 from app.project_models import Project
 
 
-API_KEY_ENVIRONMENT_VARIABLE = "REGTRACE_API_KEY"
+API_KEY_ENVIRONMENT_VARIABLE = "DECAUSTRUM_API_KEY"
 ADMIN_API_KEY_ENVIRONMENT_VARIABLE = (
-    "REGTRACE_ADMIN_API_KEY"
+    "DECAUSTRUM_ADMIN_API_KEY"
 )
 WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE = (
-    "REGTRACE_WEBHOOK_MASTER_SECRET"  # nosec B105
+    "DECAUSTRUM_WEBHOOK_MASTER_SECRET"  # nosec B105
 )
 EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE = (
-    "REGTRACE_EXECUTION_GRANT_SECRET"  # nosec B105
+    "DECAUSTRUM_EXECUTION_GRANT_SECRET"  # nosec B105
 )
 
 api_key_header = APIKeyHeader(
     name="X-API-Key",
-    scheme_name="RegTraceApiKey",
-    description="API key required to access RegTrace v1 endpoints.",
+    scheme_name="DecAustrumApiKey",
+    description="API key required to access DecAustrum v1 endpoints.",
     auto_error=False,
 )
 
 admin_api_key_header = APIKeyHeader(
     name="X-Admin-API-Key",
-    scheme_name="RegTraceAdminApiKey",
+    scheme_name="DecAustrumAdminApiKey",
     description=(
         "Administrative API key required to provision "
-        "RegTrace projects."
+        "DecAustrum projects."
     ),
     auto_error=False,
 )

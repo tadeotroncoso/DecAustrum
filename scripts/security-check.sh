@@ -26,16 +26,41 @@ cd "$repository_root"
     --progress-spinner off
 
 if ! bandit_output=$("$virtual_python" -m bandit \
-    --recursive app \
+    --recursive \
+    app \
+    sdk/python/src \
+    scripts \
     --quiet 2>&1); then
     printf '%s\n' "$bandit_output" >&2
     exit 1
 fi
 
-git ls-files --cached --others --exclude-standard -z | \
-    xargs -0 "$detect_secrets_hook" \
-        --baseline .secrets.baseline \
-        --no-verify \
-        --exclude-files '^\.(bandit-baseline\.json|secrets\.baseline)$'
+publishable_file_list=""
+cleanup() {
+    if [ -n "$publishable_file_list" ]; then
+        rm -f "$publishable_file_list"
+    fi
+}
+trap cleanup EXIT HUP INT TERM
 
-echo "RegTrace security gate passed."
+publishable_file_list=$(mktemp \
+    "${TMPDIR:-/tmp}/decaustrum-publishable-files.XXXXXX")
+
+if ! git ls-files --cached --others --exclude-standard -z \
+    > "$publishable_file_list"; then
+    echo "Tracked file discovery failed." >&2
+    exit 1
+fi
+
+if [ ! -s "$publishable_file_list" ]; then
+    echo "Secret scan requires at least one tracked file." >&2
+    exit 1
+fi
+
+xargs -0 "$detect_secrets_hook" \
+    --baseline .secrets.baseline \
+    --no-verify \
+    --exclude-files '^\.(bandit-baseline\.json|secrets\.baseline)$' \
+    < "$publishable_file_list"
+
+echo "DecAustrum security gate passed."

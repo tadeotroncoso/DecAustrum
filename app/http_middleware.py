@@ -24,7 +24,7 @@ from app.rate_limit import (
 from app.runtime_config import RuntimeSettings
 
 
-LOGGER = logging.getLogger("regtrace.http")
+LOGGER = logging.getLogger("decaustrum.http")
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 JSON_BODY_METHODS = {"POST", "PUT", "PATCH"}
 CORS_METHODS = {

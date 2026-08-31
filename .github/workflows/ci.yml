@@ -50,7 +50,10 @@ jobs:
             --disable-pip \
             --progress-spinner off
           if ! bandit_output=$(python -m bandit \
-            --recursive app \
+            --recursive \
+            app \
+            sdk/python/src \
+            scripts \
             --quiet 2>&1); then
             printf '%s\n' "$bandit_output" >&2
             exit 1
@@ -74,7 +77,7 @@ jobs:
       - name: Upload Python wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: regtrace-python-wheels
+          name: decaustrum-python-wheels
           path: dist/*.whl
           if-no-files-found: error
           retention-days: 7
@@ -150,13 +153,13 @@ jobs:
           docker compose config --quiet
 
       - name: Build pinned runtime image
-        run: docker build --tag regtrace-backend:ci .
+        run: docker build --tag decaustrum-backend:ci .
 
       - name: Scan runtime image for actionable vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: regtrace-backend:ci
+          image-ref: decaustrum-backend:ci
           format: table
           exit-code: '1'
           ignore-unfixed: true
@@ -169,7 +172,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          container_name="regtrace-smoke-${GITHUB_RUN_ID}"
+          container_name="decaustrum-smoke-${GITHUB_RUN_ID}"
           cleanup() {
             docker rm --force "$container_name" >/dev/null 2>&1 || true
           }
@@ -179,7 +182,7 @@ jobs:
             --name "$container_name" \
             --env-file .env \
             --publish 127.0.0.1:8000:8000 \
-            regtrace-backend:ci
+            decaustrum-backend:ci
 
           for attempt in $(seq 1 30); do
             if curl --fail --silent \

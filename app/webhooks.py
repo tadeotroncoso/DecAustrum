@@ -132,7 +132,7 @@ def derive_webhook_signing_secret(
         raise ValueError("Webhook secret version must be positive.")
 
     message = (
-        "regtrace-webhook:"
+        "decaustrum-webhook:"
         f"{subscription_id}:{secret_version}"
     ).encode("utf-8")
     digest = hmac.new(
@@ -210,12 +210,12 @@ def build_webhook_headers(
 ) -> dict[str, str]:
     return {
         "Content-Type": "application/json",
-        "User-Agent": "RegTrace-Webhooks/0.1",
-        "X-RegTrace-Delivery-Id": str(delivery_id),
-        "X-RegTrace-Event-Id": str(event.event_id),
-        "X-RegTrace-Event-Type": event.event_type,
-        "X-RegTrace-Timestamp": str(timestamp),
-        "X-RegTrace-Signature": sign_webhook_payload(
+        "User-Agent": "DecAustrum-Webhooks/0.1",
+        "X-DecAustrum-Delivery-Id": str(delivery_id),
+        "X-DecAustrum-Event-Id": str(event.event_id),
+        "X-DecAustrum-Event-Type": event.event_type,
+        "X-DecAustrum-Timestamp": str(timestamp),
+        "X-DecAustrum-Signature": sign_webhook_payload(
             payload=payload,
             timestamp=timestamp,
             signing_secret=signing_secret,

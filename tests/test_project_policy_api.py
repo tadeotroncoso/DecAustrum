@@ -21,11 +21,11 @@ test_client = TestClient(app)
 @pytest.fixture(autouse=True)
 def temporary_evidence_store(tmp_path, monkeypatch):
     monkeypatch.setenv(
-        "REGTRACE_API_KEY",
+        "DECAUSTRUM_API_KEY",
         TEST_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
 

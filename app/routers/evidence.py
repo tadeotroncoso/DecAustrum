@@ -87,7 +87,7 @@ def _export_response(
     headers = evidence_response_headers(snapshot)
     headers["Content-Disposition"] = (
         "attachment; filename="
-        f'"regtrace-evidence-{project_id}.{extension}"'
+        f'"decaustrum-evidence-{project_id}.{extension}"'
     )
 
     return StreamingResponse(
@@ -121,12 +121,12 @@ def _bundle_response(
         {
             "Content-Disposition": (
                 "attachment; filename="
-                f'"regtrace-evidence-bundle-{bundle.manifest.export_id}.zip"'
+                f'"decaustrum-evidence-bundle-{bundle.manifest.export_id}.zip"'
             ),
-            "X-RegTrace-Export-ID": str(
+            "X-DecAustrum-Export-ID": str(
                 bundle.manifest.export_id
             ),
-            "X-RegTrace-Bundle-SHA256": (
+            "X-DecAustrum-Bundle-SHA256": (
                 bundle.manifest.bundle_sha256
             ),
         }

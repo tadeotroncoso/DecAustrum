@@ -29,9 +29,9 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def temporary_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("REGTRACE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", TEST_API_KEY)
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
     store = EvidenceStore(tmp_path / "test.db")
@@ -165,7 +165,7 @@ def test_api_streams_json_ndjson_and_csv_evidence_exports():
     assert json_response.headers["content-type"].startswith(
         "application/json"
     )
-    assert json_response.headers["x-regtrace-record-count"] == "1"
+    assert json_response.headers["x-decaustrum-record-count"] == "1"
     assert json_response.json()["records"][0]["decision"] == (
         authorization
     )
@@ -209,7 +209,7 @@ def test_api_builds_offline_verifiable_filtered_bundle():
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
-    assert len(response.headers["x-regtrace-bundle-sha256"]) == 64
+    assert len(response.headers["x-decaustrum-bundle-sha256"]) == 64
     bundle = load_evidence_bundle_archive(response.content)
     verification = verify_evidence_bundle(
         bundle,

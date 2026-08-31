@@ -27,7 +27,7 @@ def test_expired_approval_requires_resolution_data():
         requested_at=requested_at,
         expires_at=requested_at + timedelta(minutes=1),
         resolved_at=requested_at + timedelta(minutes=2),
-        resolved_by="regtrace-expiration",
+        resolved_by="decaustrum-expiration",
     )
 
     assert approval.status == "EXPIRED"

@@ -26,24 +26,24 @@ def test_runtime_settings_have_safe_local_defaults():
 def test_runtime_settings_parse_explicit_environment():
     settings = RuntimeSettings.from_environment(
         {
-            "REGTRACE_ENVIRONMENT": "test",
-            "REGTRACE_TRUSTED_HOSTS": (
+            "DECAUSTRUM_ENVIRONMENT": "test",
+            "DECAUSTRUM_TRUSTED_HOSTS": (
                 "api.example.com,*.internal.example.com"
             ),
-            "REGTRACE_CORS_ALLOWED_ORIGINS": (
+            "DECAUSTRUM_CORS_ALLOWED_ORIGINS": (
                 "https://console.example.com"
             ),
-            "REGTRACE_ENFORCE_HTTPS": "yes",
-            "REGTRACE_EXPOSE_DOCS": "off",
-            "REGTRACE_RATE_LIMIT_ENABLED": "0",
-            "REGTRACE_MAX_REQUEST_BODY_BYTES": "2048",
-            "REGTRACE_RATE_LIMIT_WINDOW_SECONDS": "30",
-            "REGTRACE_AUTHORIZATION_RATE_LIMIT": "10",
-            "REGTRACE_TENANT_RATE_LIMIT": "20",
-            "REGTRACE_ADMIN_RATE_LIMIT": "5",
-            "REGTRACE_APPROVAL_TTL_SECONDS": "3600",
-            "REGTRACE_EXECUTION_GRANT_TTL_SECONDS": "120",
-            "REGTRACE_LOG_LEVEL": "warning",
+            "DECAUSTRUM_ENFORCE_HTTPS": "yes",
+            "DECAUSTRUM_EXPOSE_DOCS": "off",
+            "DECAUSTRUM_RATE_LIMIT_ENABLED": "0",
+            "DECAUSTRUM_MAX_REQUEST_BODY_BYTES": "2048",
+            "DECAUSTRUM_RATE_LIMIT_WINDOW_SECONDS": "30",
+            "DECAUSTRUM_AUTHORIZATION_RATE_LIMIT": "10",
+            "DECAUSTRUM_TENANT_RATE_LIMIT": "20",
+            "DECAUSTRUM_ADMIN_RATE_LIMIT": "5",
+            "DECAUSTRUM_APPROVAL_TTL_SECONDS": "3600",
+            "DECAUSTRUM_EXECUTION_GRANT_TTL_SECONDS": "120",
+            "DECAUSTRUM_LOG_LEVEL": "warning",
         }
     )
 
@@ -70,18 +70,18 @@ def test_runtime_settings_parse_explicit_environment():
 def test_production_defaults_require_explicit_trusted_hosts():
     with pytest.raises(
         RuntimeConfigurationError,
-        match="REGTRACE_TRUSTED_HOSTS",
+        match="DECAUSTRUM_TRUSTED_HOSTS",
     ):
         RuntimeSettings.from_environment(
-            {"REGTRACE_ENVIRONMENT": "production"}
+            {"DECAUSTRUM_ENVIRONMENT": "production"}
         )
 
 
 def test_production_defaults_disable_docs_and_require_https():
     settings = RuntimeSettings.from_environment(
         {
-            "REGTRACE_ENVIRONMENT": "production",
-            "REGTRACE_TRUSTED_HOSTS": "api.example.com",
+            "DECAUSTRUM_ENVIRONMENT": "production",
+            "DECAUSTRUM_TRUSTED_HOSTS": "api.example.com",
         }
     )
 
@@ -92,13 +92,13 @@ def test_production_defaults_disable_docs_and_require_https():
 @pytest.mark.parametrize(
     "environment",
     [
-        {"REGTRACE_ENVIRONMENT": "staging"},
-        {"REGTRACE_RATE_LIMIT_ENABLED": "sometimes"},
-        {"REGTRACE_MAX_REQUEST_BODY_BYTES": "large"},
-        {"REGTRACE_MAX_REQUEST_BODY_BYTES": "0"},
-        {"REGTRACE_TRUSTED_HOSTS": "*"},
-        {"REGTRACE_TRUSTED_HOSTS": "*."},
-        {"REGTRACE_LOG_LEVEL": "LOUD"},
+        {"DECAUSTRUM_ENVIRONMENT": "staging"},
+        {"DECAUSTRUM_RATE_LIMIT_ENABLED": "sometimes"},
+        {"DECAUSTRUM_MAX_REQUEST_BODY_BYTES": "large"},
+        {"DECAUSTRUM_MAX_REQUEST_BODY_BYTES": "0"},
+        {"DECAUSTRUM_TRUSTED_HOSTS": "*"},
+        {"DECAUSTRUM_TRUSTED_HOSTS": "*."},
+        {"DECAUSTRUM_LOG_LEVEL": "LOUD"},
     ],
 )
 def test_runtime_settings_reject_invalid_values(environment):
@@ -120,14 +120,14 @@ def test_runtime_settings_reject_invalid_values(environment):
 def test_runtime_settings_reject_unsafe_cors_origins(origin):
     with pytest.raises(RuntimeConfigurationError):
         RuntimeSettings.from_environment(
-            {"REGTRACE_CORS_ALLOWED_ORIGINS": origin}
+            {"DECAUSTRUM_CORS_ALLOWED_ORIGINS": origin}
         )
 
 
 def test_runtime_settings_allow_local_http_cors_in_development():
     settings = RuntimeSettings.from_environment(
         {
-            "REGTRACE_CORS_ALLOWED_ORIGINS": (
+            "DECAUSTRUM_CORS_ALLOWED_ORIGINS": (
                 "http://localhost:3000"
             )
         }
@@ -184,10 +184,10 @@ def test_production_accepts_distinct_strong_secrets():
 @pytest.mark.parametrize(
     "environment",
     [
-        {"REGTRACE_APPROVAL_TTL_SECONDS": "59"},
-        {"REGTRACE_APPROVAL_TTL_SECONDS": "2592001"},
-        {"REGTRACE_EXECUTION_GRANT_TTL_SECONDS": "29"},
-        {"REGTRACE_EXECUTION_GRANT_TTL_SECONDS": "3601"},
+        {"DECAUSTRUM_APPROVAL_TTL_SECONDS": "59"},
+        {"DECAUSTRUM_APPROVAL_TTL_SECONDS": "2592001"},
+        {"DECAUSTRUM_EXECUTION_GRANT_TTL_SECONDS": "29"},
+        {"DECAUSTRUM_EXECUTION_GRANT_TTL_SECONDS": "3601"},
     ],
 )
 def test_runtime_settings_reject_invalid_lifecycle_ttls(environment):

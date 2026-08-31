@@ -1,9 +1,9 @@
-"""Public API for the RegTrace Python SDK."""
+"""Public API for the DecAustrum Python SDK."""
 
-from regtrace.async_client import AsyncRegTraceClient
-from regtrace.client import RegTraceClient
-from regtrace._version import __version__
-from regtrace.errors import (
+from decaustrum.async_client import AsyncDecAustrumClient
+from decaustrum.client import DecAustrumClient
+from decaustrum._version import __version__
+from decaustrum.errors import (
     ActionDeniedError,
     ApprovalRequiredError,
     ApprovalWaitTimeoutError,
@@ -11,19 +11,19 @@ from regtrace.errors import (
     ConflictError,
     NotFoundError,
     RateLimitError,
-    RegTraceAPIError,
-    RegTraceError,
-    RegTraceProtocolError,
-    RegTraceTransportError,
+    DecAustrumAPIError,
+    DecAustrumError,
+    DecAustrumProtocolError,
+    DecAustrumTransportError,
     ServerError,
     ValidationError,
 )
-from regtrace.guard import (
-    AsyncRegTraceGuard,
+from decaustrum.guard import (
+    AsyncDecAustrumGuard,
     GuardedExecution,
-    RegTraceGuard,
+    DecAustrumGuard,
 )
-from regtrace.models import (
+from decaustrum.models import (
     ApprovalGrant,
     ApprovalPage,
     ApprovalRecord,
@@ -42,8 +42,8 @@ __all__ = [
     "ApprovalRecord",
     "ApprovalRequiredError",
     "ApprovalWaitTimeoutError",
-    "AsyncRegTraceClient",
-    "AsyncRegTraceGuard",
+    "AsyncDecAustrumClient",
+    "AsyncDecAustrumGuard",
     "AuthenticationError",
     "AuthorizationDecision",
     "ConditionEvidence",
@@ -55,12 +55,12 @@ __all__ = [
     "PolicyEvidence",
     "PolicyTraceEntry",
     "RateLimitError",
-    "RegTraceAPIError",
-    "RegTraceClient",
-    "RegTraceError",
-    "RegTraceGuard",
-    "RegTraceProtocolError",
-    "RegTraceTransportError",
+    "DecAustrumAPIError",
+    "DecAustrumClient",
+    "DecAustrumError",
+    "DecAustrumGuard",
+    "DecAustrumProtocolError",
+    "DecAustrumTransportError",
     "ServerError",
     "ValidationError",
     "__version__",

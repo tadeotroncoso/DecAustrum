@@ -4,13 +4,13 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
-from regtrace.async_client import AsyncRegTraceClient
-from regtrace.client import RegTraceClient
-from regtrace.errors import (
+from decaustrum.async_client import AsyncDecAustrumClient
+from decaustrum.client import DecAustrumClient
+from decaustrum.errors import (
     ActionDeniedError,
     ApprovalRequiredError,
 )
-from regtrace.models import (
+from decaustrum.models import (
     AuthorizationDecision,
     ExecutionGrantConsumption,
 )
@@ -21,7 +21,7 @@ ResultT = TypeVar("ResultT")
 
 @dataclass(frozen=True, slots=True)
 class GuardedExecution(Generic[ResultT]):
-    """Result of a business operation executed behind RegTrace."""
+    """Result of a business operation executed behind DecAustrum."""
 
     value: ResultT
     authorization: AuthorizationDecision | None = None
@@ -35,10 +35,10 @@ class GuardedExecution(Generic[ResultT]):
             )
 
 
-class RegTraceGuard:
+class DecAustrumGuard:
     """Runs synchronous operations only after successful authorization."""
 
-    def __init__(self, client: RegTraceClient) -> None:
+    def __init__(self, client: DecAustrumClient) -> None:
         self.client = client
 
     def execute(
@@ -102,10 +102,10 @@ class RegTraceGuard:
         )
 
 
-class AsyncRegTraceGuard:
+class AsyncDecAustrumGuard:
     """Runs async operations only after successful authorization."""
 
-    def __init__(self, client: AsyncRegTraceClient) -> None:
+    def __init__(self, client: AsyncDecAustrumClient) -> None:
         self.client = client
 
     async def execute(
@@ -158,7 +158,7 @@ class AsyncRegTraceGuard:
 
 
 __all__ = [
-    "AsyncRegTraceGuard",
+    "AsyncDecAustrumGuard",
     "GuardedExecution",
-    "RegTraceGuard",
+    "DecAustrumGuard",
 ]

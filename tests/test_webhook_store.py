@@ -34,7 +34,7 @@ def build_subscription(
     return WebhookSubscription(
         subscription_id=uuid4(),
         project_id=project.project_id,
-        url="https://hooks.example.com/regtrace",
+        url="https://hooks.example.com/decaustrum",
         event_types=event_types or ["*"],
         created_at=NOW,
         updated_at=NOW,

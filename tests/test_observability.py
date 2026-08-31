@@ -20,22 +20,22 @@ def test_metrics_registry_renders_prometheus_metrics():
 
     rendered = registry.render_prometheus()
 
-    assert "# TYPE regtrace_http_requests_total counter" in rendered
+    assert "# TYPE decaustrum_http_requests_total counter" in rendered
     assert (
-        'regtrace_http_requests_total{method="POST",'
+        'decaustrum_http_requests_total{method="POST",'
         'route="/v1/authorize",status="200"} 1'
     ) in rendered
     assert (
-        'regtrace_http_request_duration_seconds_bucket{le="0.1",'
+        'decaustrum_http_request_duration_seconds_bucket{le="0.1",'
         'method="POST",route="/v1/authorize"} 1'
     ) in rendered
-    assert "regtrace_http_in_flight_requests 0" in rendered
-    assert "regtrace_ready 1" in rendered
+    assert "decaustrum_http_in_flight_requests 0" in rendered
+    assert "decaustrum_ready 1" in rendered
     assert (
-        'regtrace_security_events_total{event="authentication_failed"} 1'
+        'decaustrum_security_events_total{event="authentication_failed"} 1'
     ) in rendered
     assert (
-        'regtrace_authorization_decisions_total{decision="DENY"} 1'
+        'decaustrum_authorization_decisions_total{decision="DENY"} 1'
     ) in rendered
     assert rendered.endswith("\n")
 
@@ -54,8 +54,8 @@ def test_metrics_registry_resets_all_runtime_values():
     registry.reset()
     rendered = registry.render_prometheus()
 
-    assert "regtrace_ready 0" in rendered
-    assert "regtrace_http_in_flight_requests 0" in rendered
+    assert "decaustrum_ready 0" in rendered
+    assert "decaustrum_http_in_flight_requests 0" in rendered
     assert 'route="/health"' not in rendered
 
 
@@ -70,7 +70,7 @@ def test_prometheus_labels_are_escaped():
 
 def test_json_log_formatter_emits_only_safe_allowlisted_fields():
     record = logging.LogRecord(
-        name="regtrace.http",
+        name="decaustrum.http",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
@@ -102,7 +102,7 @@ def test_json_log_formatter_reports_exception_type_not_message():
         exception_info = sys.exc_info()
 
     record = logging.LogRecord(
-        name="regtrace.http",
+        name="decaustrum.http",
         level=logging.ERROR,
         pathname=__file__,
         lineno=1,

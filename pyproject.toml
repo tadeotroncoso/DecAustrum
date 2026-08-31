@@ -3,13 +3,29 @@ requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "regtrace-backend"
+name = "decaustrum-backend"
 version = "0.1.0"
-description = "Project-scoped authorization and verifiable evidence backend"
+description = "Project-scoped authorization, human approval, and verifiable decision evidence"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 authors = [
-    {name = "RegTrace"},
+    {name = "Tadeo Adrián Troncoso Taraborrelli", email = "35420076+tadeotroncoso@users.noreply.github.com"},
+]
+keywords = [
+    "authorization",
+    "ai-agents",
+    "policy-engine",
+    "human-approval",
+    "audit-evidence",
+    "webhooks",
+]
+license = "LicenseRef-DecAustrum-Portfolio-Evaluation-1.0"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
     "fastapi==0.141.1",
@@ -20,7 +36,7 @@ dependencies = [
 ]
 
 [project.scripts]
-regtrace-webhook-worker = "app.webhook_worker:main"
+decaustrum-webhook-worker = "app.webhook_worker:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

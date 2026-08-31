@@ -40,16 +40,16 @@ client = TestClient(
 
 @pytest.fixture(autouse=True)
 def temporary_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("REGTRACE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", TEST_API_KEY)
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         TEST_SECRET,
     )
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     bootstrap_default_project(store=store, api_key=TEST_API_KEY)
     store.seed_project_policies(

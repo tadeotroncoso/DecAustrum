@@ -2,14 +2,14 @@
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-python_command=${REGTRACE_PYTHON:-python3}
+python_command=${DECAUSTRUM_PYTHON:-python3}
 python_minor=$(
     "$python_command" -c \
         'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'
 )
 
 if [ "$python_minor" != "3.12" ]; then
-    echo "RegTrace requires Python 3.12; found $python_minor." >&2
+    echo "DecAustrum requires Python 3.12; found $python_minor." >&2
     exit 1
 fi
 
@@ -42,4 +42,4 @@ if [ "${1:-}" != "--runtime" ]; then
         --editable "$repository_root/sdk/python"
 fi
 
-printf 'RegTrace environment is ready at %s\n' "$virtual_environment"
+printf 'DecAustrum environment is ready at %s\n' "$virtual_environment"

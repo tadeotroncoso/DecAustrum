@@ -21,22 +21,22 @@ The package requires Python 3.11 or newer and depends only on `httpx`.
 Pass configuration explicitly:
 
 ```python
-from regtrace import RegTraceClient
+from decaustrum import DecAustrumClient
 
-client = RegTraceClient(
+client = DecAustrumClient(
     base_url="http://localhost:8000",
     api_key="project-api-key",
     timeout=10.0,
 )
 ```
 
-Or use `RegTraceClient.from_environment()`, which reads:
+Or use `DecAustrumClient.from_environment()`, which reads:
 
-- `REGTRACE_API_KEY` (required);
-- `REGTRACE_BASE_URL` (defaults to `http://localhost:8000`).
+- `DECAUSTRUM_API_KEY` (required);
+- `DECAUSTRUM_BASE_URL` (defaults to `http://localhost:8000`).
 
 The SDK sends `X-API-Key`, a versioned `User-Agent`, and a unique
-`X-Request-ID` on every call. The request ID returned by RegTrace is attached
+`X-Request-ID` on every call. The request ID returned by DecAustrum is attached
 to structured SDK exceptions for log correlation.
 
 ## Direct authorization
@@ -67,18 +67,18 @@ different request raises `ConflictError`.
 
 ## Enforcing a real operation
 
-`RegTraceGuard` couples authorization to a zero-argument callback. The callback
+`DecAustrumGuard` couples authorization to a zero-argument callback. The callback
 is not called after `DENY`, while approval is pending, or when grant validation
 or consumption fails.
 
 ```python
-from regtrace import (
+from decaustrum import (
     ActionDeniedError,
     ApprovalRequiredError,
-    RegTraceGuard,
+    DecAustrumGuard,
 )
 
-guard = RegTraceGuard(client)
+guard = DecAustrumGuard(client)
 
 try:
     result = guard.execute(
@@ -98,7 +98,7 @@ except ApprovalRequiredError as exc:
 ```
 
 Keep the business callback small and make it idempotent where possible.
-RegTrace decides whether execution is authorized; it cannot roll back an
+DecAustrum decides whether execution is authorized; it cannot roll back an
 external side effect after the callback starts.
 
 ## Closed approval flow
@@ -143,16 +143,16 @@ plaintext execution grant from storage.
 
 ## Async applications
 
-`AsyncRegTraceClient` and `AsyncRegTraceGuard` expose the same contracts:
+`AsyncDecAustrumClient` and `AsyncDecAustrumGuard` expose the same contracts:
 
 ```python
-from regtrace import AsyncRegTraceClient, AsyncRegTraceGuard
+from decaustrum import AsyncDecAustrumClient, AsyncDecAustrumGuard
 
-async with AsyncRegTraceClient(
-    base_url="https://regtrace.internal",
+async with AsyncDecAustrumClient(
+    base_url="https://decaustrum.internal",
     api_key="project-api-key",
 ) as client:
-    guard = AsyncRegTraceGuard(client)
+    guard = AsyncDecAustrumGuard(client)
     result = await guard.execute(
         agent="support-agent",
         action="refund_payment",
@@ -165,7 +165,7 @@ The async callback must return an awaitable.
 
 ## Error handling
 
-All SDK exceptions inherit from `RegTraceError`:
+All SDK exceptions inherit from `DecAustrumError`:
 
 | Exception | Meaning |
 |---|---|
@@ -174,9 +174,9 @@ All SDK exceptions inherit from `RegTraceError`:
 | `ConflictError` | Idempotency or lifecycle conflict, including grant replay |
 | `ValidationError` | Invalid request or incompatible policy context |
 | `RateLimitError` | Configured API rate exceeded; includes `retry_after` |
-| `ServerError` | RegTrace returned a 5xx response |
-| `RegTraceTransportError` | Connection or timeout failure |
-| `RegTraceProtocolError` | Success response did not match the SDK contract |
+| `ServerError` | DecAustrum returned a 5xx response |
+| `DecAustrumTransportError` | Connection or timeout failure |
+| `DecAustrumProtocolError` | Success response did not match the SDK contract |
 | `ActionDeniedError` | Guard blocked a policy-denied operation |
 | `ApprovalRequiredError` | Guard deferred execution for human review |
 
@@ -187,7 +187,7 @@ established.
 
 ## Local end-to-end example
 
-After starting RegTrace with the local development environment, run:
+After starting DecAustrum with the local development environment, run:
 
 ```powershell
 python .\sdk\python\examples\protected_bank_transfer.py

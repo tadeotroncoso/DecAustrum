@@ -92,7 +92,7 @@ def build_grant(
 
 
 def test_initialize_creates_execution_grant_controls(tmp_path):
-    database_path = tmp_path / "regtrace.db"
+    database_path = tmp_path / "decaustrum.db"
     store = EvidenceStore(database_path)
     store.initialize()
 
@@ -129,7 +129,7 @@ def test_initialize_creates_execution_grant_controls(tmp_path):
 
 
 def test_database_rejects_approval_without_grant(tmp_path):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     authorization, _ = seed_pending(store)
 
@@ -154,7 +154,7 @@ def test_approval_grant_and_audit_are_one_transaction(
     tmp_path,
     monkeypatch,
 ):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     authorization, _ = seed_pending(store)
     grant = build_grant(authorization)
@@ -193,7 +193,7 @@ def test_approval_rolls_back_when_outbox_write_fails(
     tmp_path,
     monkeypatch,
 ):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     authorization, _ = seed_pending(store)
     grant = build_grant(authorization)
@@ -237,7 +237,7 @@ def test_approval_rolls_back_when_outbox_write_fails(
 
 
 def test_execution_grant_identity_cannot_change_or_be_deleted(tmp_path):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     authorization, _ = seed_pending(store)
     grant = build_grant(authorization)
@@ -276,7 +276,7 @@ def test_consumption_rolls_back_when_outbox_write_fails(
     tmp_path,
     monkeypatch,
 ):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     authorization, _ = seed_pending(store)
     grant = build_grant(authorization)
@@ -345,7 +345,7 @@ def test_consumption_rolls_back_when_outbox_write_fails(
 
 
 def test_expiring_approval_is_durable_audited_and_webhooked(tmp_path):
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     authorization, approval = seed_pending(store)
     expired_at = approval.expires_at + timedelta(seconds=1)
@@ -367,7 +367,7 @@ def test_expiring_approval_is_durable_audited_and_webhooked(tmp_path):
 
     assert len(expired) == 1
     assert expired[0].status == "EXPIRED"
-    assert expired[0].resolved_by == "regtrace-expiration"
+    assert expired[0].resolved_by == "decaustrum-expiration"
     assert len(audit) == 1
     assert len(webhooks) == 1
 

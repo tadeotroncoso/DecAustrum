@@ -500,7 +500,7 @@ class EvidenceStore:
                         project_id=project_id,
                         context=AuditContext(
                             actor_type="SYSTEM",
-                            actor_id="regtrace-expiration",
+                            actor_id="decaustrum-expiration",
                             reason=(
                                 "Approval validity period elapsed."
                             ),
@@ -806,7 +806,7 @@ class EvidenceStore:
                         project_id=project_id,
                         context=AuditContext(
                             actor_type="SYSTEM",
-                            actor_id="regtrace-expiration",
+                            actor_id="decaustrum-expiration",
                             reason=(
                                 "Execution grant validity period "
                                 "elapsed."

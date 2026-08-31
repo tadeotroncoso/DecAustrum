@@ -1,16 +1,16 @@
-"""Run a bank transfer only after RegTrace authorizes it.
+"""Run a bank transfer only after DecAustrum authorizes it.
 
-Start the local API first, configure REGTRACE_API_KEY and
-REGTRACE_BASE_URL, then run this file. The inline approval is deliberately a
+Start the local API first, configure DECAUSTRUM_API_KEY and
+DECAUSTRUM_BASE_URL, then run this file. The inline approval is deliberately a
 demo shortcut; production reviewers should approve through a separate trusted
 workflow and pass the short-lived grant to the execution runtime securely.
 """
 
-from regtrace import (
+from decaustrum import (
     ActionDeniedError,
     ApprovalRequiredError,
-    RegTraceClient,
-    RegTraceGuard,
+    DecAustrumClient,
+    DecAustrumGuard,
 )
 
 
@@ -30,8 +30,8 @@ def perform_bank_transfer() -> dict[str, object]:
 
 
 def main() -> None:
-    with RegTraceClient.from_environment() as client:
-        guard = RegTraceGuard(client)
+    with DecAustrumClient.from_environment() as client:
+        guard = DecAustrumGuard(client)
 
         try:
             result = guard.execute(

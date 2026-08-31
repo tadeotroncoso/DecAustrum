@@ -55,17 +55,17 @@ class ApiRecordingTransport:
 
 @pytest.fixture(autouse=True)
 def temporary_evidence_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("REGTRACE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", TEST_API_KEY)
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_WEBHOOK_MASTER_SECRET",
+        "DECAUSTRUM_WEBHOOK_MASTER_SECRET",
         TEST_MASTER_SECRET,
     )
     monkeypatch.setenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         "test-execution-grant-secret-at-least-32-bytes",
     )
     store = EvidenceStore(tmp_path / "test.db")
@@ -112,7 +112,7 @@ def create_subscription(
     project_id: str,
     event_types=None,
 ) -> dict:
-    body = {"url": "https://hooks.example.com/regtrace"}
+    body = {"url": "https://hooks.example.com/decaustrum"}
 
     if event_types is not None:
         body["event_types"] = event_types
@@ -283,8 +283,8 @@ def test_authorization_outbox_is_idempotent_and_dispatchable(
     request = transport.requests[0]
     assert verify_webhook_signature(
         payload=request["body"],
-        timestamp=request["headers"]["X-RegTrace-Timestamp"],
-        signature=request["headers"]["X-RegTrace-Signature"],
+        timestamp=request["headers"]["X-DecAustrum-Timestamp"],
+        signature=request["headers"]["X-DecAustrum-Signature"],
         signing_secret=created["signing_secret"],
         now=datetime.now(timezone.utc),
     )

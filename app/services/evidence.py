@@ -143,7 +143,7 @@ def create_evidence_bundle(
 
     if not verification.verified:
         raise RuntimeError(
-            "RegTrace generated an evidence bundle that failed "
+            "DecAustrum generated an evidence bundle that failed "
             f"verification: {verification.failure}"
         )
 
@@ -169,15 +169,15 @@ def evidence_response_headers(
     snapshot: EvidenceExportSnapshot,
 ) -> dict[str, str]:
     return {
-        "X-RegTrace-Project-ID": str(snapshot.project_id),
-        "X-RegTrace-Snapshot-At": (
+        "X-DecAustrum-Project-ID": str(snapshot.project_id),
+        "X-DecAustrum-Snapshot-At": (
             snapshot.captured_at.isoformat()
         ),
-        "X-RegTrace-Record-Count": str(snapshot.record_count),
-        "X-RegTrace-Max-Sequence": str(
+        "X-DecAustrum-Record-Count": str(snapshot.record_count),
+        "X-DecAustrum-Max-Sequence": str(
             snapshot.max_sequence_number
         ),
-        "X-RegTrace-Chain-Head": (
+        "X-DecAustrum-Chain-Head": (
             snapshot.chain_head_hash or ""
         ),
     }

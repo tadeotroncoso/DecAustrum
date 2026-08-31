@@ -14,7 +14,7 @@ from app.webhook_models import WebhookDispatchSummary
 from app.webhooks import UrllibWebhookTransport, WebhookTransport
 
 
-LOGGER = logging.getLogger("regtrace.webhook_worker")
+LOGGER = logging.getLogger("decaustrum.webhook_worker")
 
 
 def run_webhook_worker(
@@ -69,7 +69,7 @@ def run_webhook_worker(
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Deliver due RegTrace webhook outbox records."
+            "Deliver due DecAustrum webhook outbox records."
         )
     )
     parser.add_argument(

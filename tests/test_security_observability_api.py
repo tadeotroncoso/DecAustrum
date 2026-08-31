@@ -361,7 +361,7 @@ def test_health_readiness_reports_store_state():
     assert live.status_code == 200
     assert ready.status_code == 200
     assert ready.json() == {"status": "ok"}
-    assert "regtrace_ready 1" in (
+    assert "decaustrum_ready 1" in (
         application.state.metrics_registry.render_prometheus()
     )
 
@@ -384,7 +384,7 @@ def test_health_readiness_hides_storage_failure_details():
 
 def test_metrics_require_admin_authentication(monkeypatch):
     admin_key = "admin-observability-key"
-    monkeypatch.setenv("REGTRACE_ADMIN_API_KEY", admin_key)
+    monkeypatch.setenv("DECAUSTRUM_ADMIN_API_KEY", admin_key)
     application = create_app(build_settings())
     client = TestClient(application)
     client.get("/health")
@@ -405,7 +405,7 @@ def test_metrics_require_admin_authentication(monkeypatch):
     assert allowed.headers["content-type"] == (
         "text/plain; version=0.0.4; charset=utf-8"
     )
-    assert "regtrace_http_requests_total" in allowed.text
+    assert "decaustrum_http_requests_total" in allowed.text
     assert admin_key not in allowed.text
 
 
@@ -415,8 +415,8 @@ def test_authorization_decision_is_counted_without_tenant_labels(
 ):
     api_key = "tenant-observability-key"
     admin_key = "admin-observability-key"
-    monkeypatch.setenv("REGTRACE_ADMIN_API_KEY", admin_key)
-    store = EvidenceStore(tmp_path / "regtrace.db")
+    monkeypatch.setenv("DECAUSTRUM_ADMIN_API_KEY", admin_key)
+    store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     bootstrap_default_project(store=store, api_key=api_key)
     store.seed_project_policies(
@@ -444,7 +444,7 @@ def test_authorization_decision_is_counted_without_tenant_labels(
 
     assert authorization.status_code == 200
     assert (
-        'regtrace_authorization_decisions_total{decision="ALLOW"} 1'
+        'decaustrum_authorization_decisions_total{decision="ALLOW"} 1'
         in metrics.text
     )
     assert api_key not in metrics.text

@@ -9,7 +9,7 @@ $virtualPython = Join-Path $repositoryRoot ".venv\Scripts\python.exe"
 $environmentFile = Join-Path $repositoryRoot ".env"
 
 if (-not (Test-Path -LiteralPath $virtualPython)) {
-    throw "Run scripts\bootstrap.ps1 before starting RegTrace."
+    throw "Run scripts\bootstrap.ps1 before starting DecAustrum."
 }
 
 if (-not (Test-Path -LiteralPath $environmentFile)) {
@@ -24,5 +24,5 @@ if (-not (Test-Path -LiteralPath $environmentFile)) {
     --no-access-log
 
 if ($LASTEXITCODE -ne 0) {
-    throw "RegTrace API exited with code $LASTEXITCODE."
+    throw "DecAustrum API exited with code $LASTEXITCODE."
 }

@@ -65,7 +65,10 @@ try {
         $ErrorActionPreference = "Continue"
         $banditOutput = @(
             & $virtualPython -m bandit `
-                --recursive app `
+                --recursive `
+                app `
+                "sdk\python\src" `
+                scripts `
                 --quiet 2>&1
         )
         $banditExitCode = $LASTEXITCODE
@@ -105,4 +108,4 @@ try {
     Pop-Location
 }
 
-Write-Host "RegTrace security gate passed."
+Write-Host "DecAustrum security gate passed."

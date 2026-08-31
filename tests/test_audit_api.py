@@ -20,13 +20,13 @@ test_client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def temporary_evidence_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("REGTRACE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", TEST_API_KEY)
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         "test-execution-grant-secret-at-least-32-bytes",
     )
     store = EvidenceStore(tmp_path / "test.db")

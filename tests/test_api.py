@@ -39,15 +39,15 @@ unauthenticated_client = TestClient(app)
 @pytest.fixture(autouse=True)
 def temporary_evidence_store(tmp_path, monkeypatch):
     monkeypatch.setenv(
-        "REGTRACE_API_KEY",
+        "DECAUSTRUM_API_KEY",
         TEST_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_ADMIN_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
         TEST_ADMIN_API_KEY,
     )
     monkeypatch.setenv(
-        "REGTRACE_EXECUTION_GRANT_SECRET",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
         TEST_EXECUTION_GRANT_SECRET,
     )
     store = EvidenceStore(tmp_path / "test.db")
@@ -869,7 +869,7 @@ def test_openapi_defines_api_key_security_scheme():
     schema = app.openapi()
 
     security_scheme = schema["components"]["securitySchemes"][
-        "RegTraceApiKey"
+        "DecAustrumApiKey"
     ]
 
     assert security_scheme["type"] == "apiKey"
@@ -881,7 +881,7 @@ def test_openapi_defines_admin_api_key_security_scheme():
     schema = app.openapi()
 
     security_scheme = schema["components"]["securitySchemes"][
-        "RegTraceAdminApiKey"
+        "DecAustrumAdminApiKey"
     ]
 
     assert security_scheme["type"] == "apiKey"
@@ -911,9 +911,9 @@ def test_all_v1_endpoints_require_expected_api_key_in_openapi():
                 continue
 
             expected_scheme = (
-                "RegTraceAdminApiKey"
+                "DecAustrumAdminApiKey"
                 if path.startswith("/v1/admin/")
-                else "RegTraceApiKey"
+                else "DecAustrumApiKey"
             )
 
             assert {expected_scheme: []} in operation.get(

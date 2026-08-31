@@ -1,6 +1,6 @@
-# RegTrace backend architecture
+# DecAustrum backend architecture
 
-RegTrace uses a layered modular architecture. The goal is to keep HTTP,
+DecAustrum uses a layered modular architecture. The goal is to keep HTTP,
 application workflows, domain logic, and SQLite persistence independently
 changeable while preserving explicit transaction boundaries.
 
@@ -178,11 +178,11 @@ The recorded actions are project creation and status changes, API-key creation
 and revocation, policy creation, update, disable and rollback, approval
 resolution or expiry, and execution-grant issuance, consumption, or expiry.
 Initial project templates and default-project bootstrap operations are
-attributed to `regtrace-bootstrap` as a `SYSTEM` actor.
+attributed to `decaustrum-bootstrap` as a `SYSTEM` actor.
 
 Administrative API clients can identify the operator with `X-Admin-Actor` and
 provide a ticket or explanation with `X-Audit-Reason`. Existing clients remain
-compatible: when the actor header is absent, RegTrace records
+compatible: when the actor header is absent, DecAustrum records
 `admin-api-key`. Approval resolution uses the authenticated project as the
 actor type and the request's `resolved_by` and optional `reason` values.
 
@@ -217,7 +217,7 @@ belong to later production hardening.
 
 ## Transactional events and signed webhooks
 
-`webhook_events` is the immutable domain-event outbox. RegTrace currently
+`webhook_events` is the immutable domain-event outbox. DecAustrum currently
 emits these version-1 event types:
 
 - `authorization.created`;
@@ -235,7 +235,7 @@ identity, type, schema version, and JSON data. The exact canonical JSON body is
 stored once with sorted keys, compact separators, UTF-8 Unicode, and rejected
 non-finite numbers. SQLite triggers reject event updates and deletes.
 
-When an event is appended, RegTrace selects only active subscriptions in the
+When an event is appended, DecAustrum selects only active subscriptions in the
 same project whose event selectors contain the event type or the standalone
 `*` wildcard. It creates a unique `(event_id, subscription_id)` delivery in the
 same SQLite transaction. A subscription created later never receives old
@@ -249,7 +249,7 @@ it. Subscriptions are disabled rather than deleted so historical delivery
 ownership remains intact. Disabling is idempotent and cancels queued work.
 
 Signing secrets are derived with HMAC-SHA-256 from the subscription UUID,
-secret version, and `REGTRACE_WEBHOOK_MASTER_SECRET`. The master must contain at
+secret version, and `DECAUSTRUM_WEBHOOK_MASTER_SECRET`. The master must contain at
 least 32 bytes and must be supplied through the environment, never committed.
 SQLite stores only `secret_version`; neither the master nor a derived signing
 secret is persisted. Rotation increments the version and immediately changes
@@ -264,10 +264,10 @@ Every request body is signed over:
 
 with the derived subscription secret. Deliveries include:
 
-- `X-RegTrace-Delivery-Id` for receiver-side idempotency;
-- `X-RegTrace-Event-Id` and `X-RegTrace-Event-Type`;
-- `X-RegTrace-Timestamp` for replay-window checks;
-- `X-RegTrace-Signature` in `v1=<hex-hmac>` format.
+- `X-DecAustrum-Delivery-Id` for receiver-side idempotency;
+- `X-DecAustrum-Event-Id` and `X-DecAustrum-Event-Type`;
+- `X-DecAustrum-Timestamp` for replay-window checks;
+- `X-DecAustrum-Signature` in `v1=<hex-hmac>` format.
 
 Receivers must verify the signature against the raw body before parsing JSON,
 reject stale timestamps (five minutes is the provided verifier default), and
@@ -296,7 +296,7 @@ python -m app.webhook_worker
 
 `--once` processes one batch for cron-style scheduling; `--batch-size` and
 `--poll-interval` control bounded work and idle polling. API and worker must use
-the same SQLite database and `REGTRACE_WEBHOOK_MASTER_SECRET`. A production
+the same SQLite database and `DECAUSTRUM_WEBHOOK_MASTER_SECRET`. A production
 deployment should run this worker separately from the API so outbound latency
 and retries never consume request-serving capacity.
 
@@ -327,7 +327,7 @@ the creation time, and one of these change types:
 - `MIGRATED`: the current snapshot found when upgrading a legacy database.
 
 Rollback never rewrites an old row or moves the current version backwards. If
-version 2 is current and version 1 is restored, RegTrace creates version 3 with
+version 2 is current and version 1 is restored, DecAustrum creates version 3 with
 `change_type=ROLLBACK` and `source_version=1`. The current policy is re-enabled
 as part of that transaction. Disabling a policy changes operational state but
 does not create a content version.
@@ -337,14 +337,14 @@ primary key `(project_id, policy_id, version)` and every history query preserve
 tenant isolation. Administrative endpoints support paginated history listing,
 single-version retrieval, and rollback; tenant API keys cannot use them.
 
-When an existing database is upgraded, RegTrace can only preserve the current
+When an existing database is upgraded, DecAustrum can only preserve the current
 snapshot because older overwritten definitions no longer exist. It records that
 snapshot once as `MIGRATED`; initialization and backfill are idempotent.
 
 ## Cryptographically verifiable decision ledger
 
 Every authorization decision is appended to a separate SHA-256 chain for its
-project. RegTrace serializes the fields defined by the immutable payload schema
+project. DecAustrum serializes the fields defined by the immutable payload schema
 version 1 as canonical JSON using UTF-8, sorted object keys, compact separators,
 preserved Unicode, and rejected non-finite numbers. A later API response field
 therefore cannot silently change historical hashes. Version 1 contains
@@ -459,10 +459,10 @@ times, project, counts, captured head, optional trusted checkpoint, and separate
 SHA-256 digests for the selected records, full chain, and logical bundle.
 
 Archive loading rejects duplicate, missing, or unexpected members, malformed
-JSON, invalid RegTrace models, and oversized uncompressed content. ZIP member
+JSON, invalid DecAustrum models, and oversized uncompressed content. ZIP member
 metadata is deterministic, while verification hashes canonical logical data so
 irrelevant whitespace or ZIP compression differences do not alter the result.
-RegTrace verifies every generated bundle before returning it and refuses export
+DecAustrum verifies every generated bundle before returning it and refuses export
 with HTTP 409 if the live project ledger fails integrity verification. Bundle
 chains are also bounded to 100,000 records for this local MVP.
 
@@ -499,7 +499,7 @@ runtimes receive only project-scoped credentials while project provisioning,
 policy mutation, API-key lifecycle, webhook administration, and immutable
 audit access remain privileged REST operations.
 
-`RegTraceGuard` is the real side-effect integration boundary:
+`DecAustrumGuard` is the real side-effect integration boundary:
 
 ```text
 business request
@@ -518,7 +518,7 @@ SDK authorize ---- DENY ------------> callback not invoked
 
 The approved path consumes its grant before entering the callback. This closes
 the authorization state machine but cannot make an arbitrary external side
-effect transactional with RegTrace. Integrations should therefore keep the
+effect transactional with DecAustrum. Integrations should therefore keep the
 callback narrow and idempotent, and re-authorize after an ambiguous or failed
 post-consumption operation rather than replaying a grant.
 

@@ -26,7 +26,7 @@ from app.webhooks import (
 )
 
 
-DATABASE_PATH = Path("data/regtrace.db")
+DATABASE_PATH = Path("data/decaustrum.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
 webhook_transport = UrllibWebhookTransport()
 

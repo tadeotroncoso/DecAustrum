@@ -20,7 +20,7 @@ from app.dependencies import (
 from app.http_middleware import SecurityObservabilityMiddleware
 from app.observability import (
     MetricsRegistry,
-    REGTRACE_VERSION,
+    DECAUSTRUM_VERSION,
     configure_json_logging,
 )
 from app.policy_engine import POLICIES_DIRECTORY
@@ -50,7 +50,78 @@ from app.security import (
 )
 
 
-LOGGER = logging.getLogger("regtrace.lifecycle")
+LOGGER = logging.getLogger("decaustrum.lifecycle")
+
+API_DESCRIPTION = (
+    "Project-scoped authorization, human approval, one-time execution "
+    "grants, and verifiable decision evidence for automated systems."
+)
+
+OPENAPI_TAGS = [
+    {
+        "name": "Health",
+        "description": "Liveness, readiness, and compatibility health checks.",
+    },
+    {
+        "name": "Authorization",
+        "description": (
+            "Evaluate an action against the authenticated "
+            "project's active policies."
+        ),
+    },
+    {
+        "name": "Policies",
+        "description": "Read the active policy set for the authenticated project.",
+    },
+    {
+        "name": "Decisions",
+        "description": "Search and retrieve persisted authorization decisions.",
+    },
+    {
+        "name": "Evidence",
+        "description": "Export filtered evidence and build offline-verifiable bundles.",
+    },
+    {
+        "name": "Integrity",
+        "description": "Inspect and verify the per-project decision hash chain.",
+    },
+    {
+        "name": "Approvals",
+        "description": "Review pending decisions and issue one-time execution grants.",
+    },
+    {
+        "name": "Execution grants",
+        "description": (
+            "Consume a grant bound to an approved agent, "
+            "action, and context."
+        ),
+    },
+    {
+        "name": "Administration: projects",
+        "description": (
+            "Provision projects and manage project API keys "
+            "and lifecycle state."
+        ),
+    },
+    {
+        "name": "Administration: policies",
+        "description": (
+            "Configure project policies and inspect immutable "
+            "version history."
+        ),
+    },
+    {
+        "name": "Administration: audit",
+        "description": "Search the append-only administrative audit trail.",
+    },
+    {
+        "name": "Administration: webhooks",
+        "description": (
+            "Manage signed webhook subscriptions, events, "
+            "and delivery attempts."
+        ),
+    },
+]
 
 
 def _sanitized_validation_errors(
@@ -125,8 +196,16 @@ def create_app(
     )
 
     application = FastAPI(
-        title="RegTrace API",
-        version=REGTRACE_VERSION,
+        title="DecAustrum API",
+        description=API_DESCRIPTION,
+        version=DECAUSTRUM_VERSION,
+        openapi_tags=OPENAPI_TAGS,
+        license_info={
+            "name": "DecAustrum Portfolio Evaluation License 1.0",
+            "identifier": (
+                "LicenseRef-DecAustrum-Portfolio-Evaluation-1.0"
+            ),
+        },
         lifespan=lifespan,
         docs_url=docs_url,
         redoc_url=(
@@ -158,19 +237,55 @@ def create_app(
             },
         )
 
-    application.include_router(health.router)
+    application.include_router(
+        health.router,
+        tags=["Health"],
+    )
     application.include_router(observability.router)
-    application.include_router(admin_audit.router)
-    application.include_router(admin_projects.router)
-    application.include_router(admin_policies.router)
-    application.include_router(admin_webhooks.router)
-    application.include_router(policies.router)
-    application.include_router(authorization.router)
-    application.include_router(decisions.router)
-    application.include_router(evidence.router)
-    application.include_router(integrity.router)
-    application.include_router(approvals.router)
-    application.include_router(execution_grants.router)
+    application.include_router(
+        admin_audit.router,
+        tags=["Administration: audit"],
+    )
+    application.include_router(
+        admin_projects.router,
+        tags=["Administration: projects"],
+    )
+    application.include_router(
+        admin_policies.router,
+        tags=["Administration: policies"],
+    )
+    application.include_router(
+        admin_webhooks.router,
+        tags=["Administration: webhooks"],
+    )
+    application.include_router(
+        policies.router,
+        tags=["Policies"],
+    )
+    application.include_router(
+        authorization.router,
+        tags=["Authorization"],
+    )
+    application.include_router(
+        decisions.router,
+        tags=["Decisions"],
+    )
+    application.include_router(
+        evidence.router,
+        tags=["Evidence"],
+    )
+    application.include_router(
+        integrity.router,
+        tags=["Integrity"],
+    )
+    application.include_router(
+        approvals.router,
+        tags=["Approvals"],
+    )
+    application.include_router(
+        execution_grants.router,
+        tags=["Execution grants"],
+    )
 
     return application
 

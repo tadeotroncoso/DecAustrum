@@ -2,12 +2,12 @@ import ast
 import tomllib
 from pathlib import Path
 
-from regtrace import __version__
+from decaustrum import __version__
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SDK_ROOT = REPOSITORY_ROOT / "sdk" / "python"
-SDK_PACKAGE = SDK_ROOT / "src" / "regtrace"
+SDK_PACKAGE = SDK_ROOT / "src" / "decaustrum"
 
 
 def test_sdk_package_metadata_matches_runtime_version():
@@ -16,7 +16,7 @@ def test_sdk_package_metadata_matches_runtime_version():
 
     project = pyproject["project"]
 
-    assert project["name"] == "regtrace-sdk"
+    assert project["name"] == "decaustrum-sdk"
     assert project["version"] == __version__
     assert project["requires-python"] == ">=3.11"
     assert project["dependencies"] == ["httpx>=0.27,<1"]

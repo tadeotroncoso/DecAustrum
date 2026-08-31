@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
+  <title id="title">DecAustrum</title>
+  <desc id="description">Project-scoped authorization with verifiable decision evidence.</desc>
+  <rect width="1280" height="640" fill="#0b1120"/>
+  <path d="M0 96H1280M0 192H1280M0 288H1280M0 384H1280M0 480H1280M0 576H1280" stroke="#94a3b8" stroke-opacity="0.055"/>
+  <path d="M160 0V640M320 0V640M480 0V640M640 0V640M800 0V640M960 0V640M1120 0V640" stroke="#94a3b8" stroke-opacity="0.04"/>
+  <rect x="80" y="78" width="8" height="484" rx="4" fill="#5b8cff"/>
+
+  <text x="128" y="234" fill="#f8fafc" font-family="Segoe UI, Arial, sans-serif" font-size="88" font-weight="700" letter-spacing="-2">DecAustrum</text>
+  <text x="132" y="292" fill="#b6c2d2" font-family="Segoe UI, Arial, sans-serif" font-size="29" font-weight="400">Authorization with verifiable evidence</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">
+    <rect x="130" y="362" width="104" height="46" rx="23" fill="#12213d" stroke="#4ade80" stroke-opacity="0.75"/>
+    <text x="182" y="391" fill="#bbf7d0" text-anchor="middle">ALLOW</text>
+    <rect x="250" y="362" width="96" height="46" rx="23" fill="#271726" stroke="#fb7185" stroke-opacity="0.78"/>
+    <text x="298" y="391" fill="#fecdd3" text-anchor="middle">DENY</text>
+    <rect x="362" y="362" width="228" height="46" rx="23" fill="#272016" stroke="#fbbf24" stroke-opacity="0.75"/>
+    <text x="476" y="391" fill="#fde68a" text-anchor="middle">REQUIRE APPROVAL</text>
+  </g>
+
+  <text x="132" y="502" fill="#718096" font-family="Segoe UI, Arial, sans-serif" font-size="21">Policy version · condition evidence · complete trace</text>
+
+  <g transform="translate(790 116)" font-family="Segoe UI, Arial, sans-serif">
+    <rect x="0" y="0" width="374" height="104" rx="14" fill="#101a2d" stroke="#334155"/>
+    <circle cx="48" cy="52" r="18" fill="#5b8cff" fill-opacity="0.18" stroke="#79a0ff"/>
+    <text x="48" y="58" fill="#c7d7ff" font-size="18" font-weight="700" text-anchor="middle">01</text>
+    <text x="86" y="45" fill="#f1f5f9" font-size="20" font-weight="650">POLICY</text>
+    <text x="86" y="72" fill="#8897aa" font-size="16">Project-scoped evaluation</text>
+
+    <path d="M187 104V128" stroke="#5b8cff" stroke-width="2"/>
+    <path d="M180 122L187 130L194 122" fill="none" stroke="#5b8cff" stroke-width="2"/>
+
+    <rect x="0" y="134" width="374" height="104" rx="14" fill="#101a2d" stroke="#334155"/>
+    <circle cx="48" cy="186" r="18" fill="#5b8cff" fill-opacity="0.18" stroke="#79a0ff"/>
+    <text x="48" y="192" fill="#c7d7ff" font-size="18" font-weight="700" text-anchor="middle">02</text>
+    <text x="86" y="179" fill="#f1f5f9" font-size="20" font-weight="650">DECISION</text>
+    <text x="86" y="206" fill="#8897aa" font-size="16">Atomic authorization record</text>
+
+    <path d="M187 238V262" stroke="#5b8cff" stroke-width="2"/>
+    <path d="M180 256L187 264L194 256" fill="none" stroke="#5b8cff" stroke-width="2"/>
+
+    <rect x="0" y="268" width="374" height="104" rx="14" fill="#101a2d" stroke="#334155"/>
+    <circle cx="48" cy="320" r="18" fill="#5b8cff" fill-opacity="0.18" stroke="#79a0ff"/>
+    <text x="48" y="326" fill="#c7d7ff" font-size="18" font-weight="700" text-anchor="middle">03</text>
+    <text x="86" y="313" fill="#f1f5f9" font-size="20" font-weight="650">EVIDENCE</text>
+    <text x="86" y="340" fill="#8897aa" font-size="16">Tamper-evident export</text>
+  </g>
+</svg>

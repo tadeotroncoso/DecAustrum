@@ -11,13 +11,15 @@ fi
 
 "$repository_root/scripts/security-check.sh"
 
-artifact_directory=$(mktemp -d "${TMPDIR:-/tmp}/regtrace-build.XXXXXX")
+artifact_directory=$(mktemp -d "${TMPDIR:-/tmp}/decaustrum-build.XXXXXX")
 trap 'rm -rf "$artifact_directory"' EXIT HUP INT TERM
 sdk_build_source="$artifact_directory/sdk-python"
 wheel_directory="$artifact_directory/wheel"
 mkdir "$sdk_build_source" "$wheel_directory"
 cp "$repository_root/sdk/python/pyproject.toml" "$sdk_build_source/"
 cp "$repository_root/sdk/python/README.md" "$sdk_build_source/"
+cp "$repository_root/sdk/python/LICENSE" "$sdk_build_source/"
+cp "$repository_root/sdk/python/THIRD_PARTY_NOTICES.md" "$sdk_build_source/"
 cp -R "$repository_root/sdk/python/src" "$sdk_build_source/"
 
 "$virtual_python" -m pip check
@@ -28,4 +30,4 @@ cp -R "$repository_root/sdk/python/src" "$sdk_build_source/"
     --wheel-dir "$wheel_directory" \
     "$sdk_build_source"
 
-echo "RegTrace tests and package builds passed."
+echo "DecAustrum tests and package builds passed."

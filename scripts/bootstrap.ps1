@@ -31,7 +31,7 @@ Assert-NativeCommandSucceeded `
     -Operation "Python version check"
 
 if ($pythonMinor -ne "3.12") {
-    throw "RegTrace requires Python 3.12; found $pythonMinor."
+    throw "DecAustrum requires Python 3.12; found $pythonMinor."
 }
 
 $virtualEnvironment = Join-Path $repositoryRoot ".venv"
@@ -81,4 +81,4 @@ if (-not $RuntimeOnly) {
         -Operation "SDK editable installation"
 }
 
-Write-Host "RegTrace environment is ready at $virtualEnvironment"
+Write-Host "DecAustrum environment is ready at $virtualEnvironment"

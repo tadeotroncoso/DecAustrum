@@ -1,19 +1,139 @@
-# RegTrace
+# DecAustrum
 
-RegTrace is a project-scoped authorization backend for AI agents and other
-automated systems. It evaluates configurable policies, records verifiable
-decision evidence, supports human approval, and issues one-time execution
-grants before a protected side effect can run.
+Project-scoped authorization, human approval, and verifiable decision evidence
+for AI agents and other automated systems.
 
-This repository contains the FastAPI backend, SQLite persistence, webhook
-worker, offline evidence verifier, and independently installable Python SDK.
+DecAustrum sits between a caller and a protected side effect. The caller asks
+to perform an action, and DecAustrum evaluates the active policy set for that
+project. The result is `ALLOW`, `DENY`, or `REQUIRE_APPROVAL`, accompanied by
+the policy version, condition evidence, and complete evaluation trace that
+produced it.
 
-## Reproducible environment
+The interesting part is not evaluating a YAML rule. It is keeping policy,
+decision, approval, execution, and audit state consistent when requests are
+retried or processes fail. DecAustrum treats that state as part of the
+authorization boundary rather than as logging added afterwards.
 
-The supported development and runtime line is CPython 3.12. The repository
-pins the preferred patch in `.python-version`, fixes direct and transitive
-dependencies under `requirements/`, and uses the same locks in local setup,
-CI, and the container image.
+**Current status:** local, security-focused backend MVP for technical
+evaluation. It is not a hosted service and contains no customer or production
+data.
+
+## Why this exists
+
+Automated systems can initiate transfers, release data, update records, and
+trigger external APIs. A boolean response is not enough when the action later
+needs to be explained, approved by a person, retried safely, or investigated.
+
+DecAustrum provides one boundary for those concerns:
+
+| Area | What DecAustrum does |
+| --- | --- |
+| Authorization | Evaluates project-specific policies with deterministic precedence. |
+| Human control | Creates pending approvals and issues short-lived, one-time execution grants after approval. |
+| Evidence | Stores the winning policy, version, condition evidence, and full evaluation trace. |
+| Integrity | Chains decisions per project and exports evidence bundles that can be verified offline. |
+| Delivery | Writes signed webhook events to a transactional outbox for an independent worker. |
+| Integration | Exposes a REST API and synchronous/asynchronous Python SDK with typed errors. |
+
+## System at a glance
+
+```mermaid
+flowchart LR
+    Caller["Agent or application"] --> Boundary["REST API or Python SDK"]
+    Boundary --> Engine["Project-scoped policy engine"]
+    Engine --> Decision{"Authorization decision"}
+    Decision --> Transaction["Atomic persistence transaction"]
+    Transaction --> Database[("SQLite + WAL")]
+    Database --> Evidence["Trace and integrity proof"]
+    Database --> Approval["Approval and one-time grant"]
+    Database --> Outbox["Transactional webhook outbox"]
+    Outbox --> Worker["Independent webhook worker"]
+    Worker --> Receiver["Signed webhook endpoint"]
+```
+
+For a `REQUIRE_APPROVAL` result, the authorization and pending approval are
+created in the same transaction. An approval can produce a signed execution
+grant bound to the original project, decision, agent, action, and context. The
+grant is consumed before the protected callback runs and cannot be replayed.
+
+## Authorization example
+
+This request asks a finance agent to initiate a bank transfer:
+
+```http
+POST /v1/authorize HTTP/1.1
+Host: 127.0.0.1:8000
+X-API-Key: replace-with-a-project-api-key
+Idempotency-Key: transfer-001
+Content-Type: application/json
+
+{
+  "agent": "finance-agent",
+  "action": "bank_transfer",
+  "context": {
+    "amount": 25000,
+    "account_verified": true
+  }
+}
+```
+
+The response includes identifiers, timestamps, the original request context,
+and the complete policy trace. The relevant fields are shown below:
+
+```json
+{
+  "decision": "REQUIRE_APPROVAL",
+  "policy": "large-transfer",
+  "policy_version": 1,
+  "reason": "Bank transfers above 10000 require approval.",
+  "evidence": {
+    "match": "all",
+    "conditions": [
+      {
+        "field": "amount",
+        "operator": "greater_than",
+        "actual_value": 25000,
+        "expected_value": 10000,
+        "matched": true
+      }
+    ]
+  }
+}
+```
+
+Repeating the same request with the same idempotency key returns the original
+decision. Reusing that key for a different request is rejected as a conflict.
+
+## Engineering properties
+
+- **Atomic authorization records.** The decision, integrity proof, optional
+  approval, idempotency record, and webhook events are committed together.
+- **Project isolation.** API keys, active policies, policy history, decisions,
+  approvals, grants, audit records, and webhooks are scoped to a project.
+- **Deterministic policy evaluation.** Conditions support `all` and `any`
+  matching; `DENY` takes precedence over `REQUIRE_APPROVAL`, which takes
+  precedence over `ALLOW`.
+- **Closed approval lifecycle.** Pending requests can be approved, rejected, or
+  expired. Approved grants are short-lived, single-use, and request-bound.
+- **Immutable administrative history.** Policy versions and administrative
+  audit events are append-only. A rollback creates a new policy version instead
+  of rewriting history.
+- **Tamper-evident evidence.** Canonical decision records form a per-project
+  SHA-256 chain. JSON, NDJSON, CSV, and offline ZIP evidence exports are
+  available.
+- **Transactional event delivery.** A separate worker delivers HMAC-signed
+  webhooks at least once, with retry and dead-letter handling.
+- **Defensive API boundary.** Trusted hosts, optional HTTPS enforcement,
+  content and body-size checks, rate limits, safe error responses, structured
+  logs, and bounded Prometheus metrics are built in.
+
+## Quick start
+
+The supported runtime is CPython 3.12. Local setup, CI, and the container image
+use pinned dependency locks.
+
+The values in `.env.example` are placeholders for local development. Do not
+reuse them in a shared or production environment.
 
 ### Windows PowerShell
 
@@ -31,39 +151,84 @@ sh ./scripts/bootstrap.sh
 sh ./scripts/run-api.sh
 ```
 
-The example secrets are only for local development. Replace them before any
-shared or production deployment. Once the API is ready:
+The API is then available at:
 
-- liveness: `http://127.0.0.1:8000/health/live`;
-- readiness: `http://127.0.0.1:8000/health/ready`;
-- interactive API documentation: `http://127.0.0.1:8000/docs`.
+- interactive documentation: <http://127.0.0.1:8000/docs>
+- liveness: <http://127.0.0.1:8000/health/live>
+- readiness: <http://127.0.0.1:8000/health/ready>
 
-Run the webhook delivery process in a second terminal with
-`scripts/run-worker.ps1` or `scripts/run-worker.sh`.
-
-## Docker Compose
-
-After copying `.env.example` to `.env`, start the API and webhook worker with:
+Run webhook delivery in a second terminal:
 
 ```powershell
+.\scripts\run-worker.ps1
+```
+
+or:
+
+```bash
+sh ./scripts/run-worker.sh
+```
+
+### Docker Compose
+
+After copying `.env.example` to `.env`:
+
+```console
 docker compose up --build
 ```
 
-Compose builds a Python 3.12 image pinned by digest, runs as an unprivileged
-user with dropped Linux capabilities, and stores SQLite state in the named
-`regtrace-data` volume. The development port is bound only to
-`127.0.0.1`, so it is not exposed to other devices on the local network. Stop
-services without deleting evidence using:
+Compose starts the API and webhook worker, stores SQLite state in the named
+`decaustrum-data` volume, runs the containers as an unprivileged user, drops
+Linux capabilities, and binds the development API only to `127.0.0.1`.
 
-```powershell
+Stop the services without deleting their evidence:
+
+```console
 docker compose down
 ```
 
-Deleting the named volume is intentionally a separate destructive operation.
+Volume deletion is deliberately a separate operation.
+
+## Python SDK
+
+The SDK is packaged independently from the backend and depends only on
+`httpx`:
+
+```console
+python -m pip install -e ./sdk/python
+```
+
+The guard places a business operation behind authorization:
+
+```python
+from decaustrum import DecAustrumClient, DecAustrumGuard
+
+
+def submit_transfer() -> dict[str, str]:
+    return {"status": "submitted"}
+
+
+with DecAustrumClient.from_environment() as client:
+    result = DecAustrumGuard(client).execute(
+        agent="finance-agent",
+        action="bank_transfer",
+        context={
+            "amount": 300,
+            "account_verified": True,
+        },
+        operation=submit_transfer,
+        idempotency_key="transfer-001",
+    )
+```
+
+For `DENY` and `REQUIRE_APPROVAL`, the SDK raises a typed exception and does
+not invoke the callback. The SDK also supports asynchronous callers, approval
+polling, and execution-grant consumption. See the [Python SDK guide](docs/sdk-python.md)
+and [runnable integration example](sdk/python/examples/protected_bank_transfer.py).
 
 ## Verification
 
-Run the complete local quality gate:
+Run the same local quality gate used by CI:
 
 ```powershell
 .\scripts\check.ps1
@@ -75,31 +240,99 @@ or:
 sh ./scripts/check.sh
 ```
 
-It audits dependency vulnerabilities, rejects new Python security findings,
-scans publishable files against reviewed secret-fixture fingerprints, runs the
-complete test suite, and builds the distributable SDK wheel in a temporary
-directory. An unreviewed or confirmed-secret baseline entry fails the gate. The
-backend's deployment artifact is its container image. GitHub Actions repeats
-those checks on Ubuntu, runs CodeQL and dependency review, scans the repository
-and runtime image, and starts the image until `/health/ready` succeeds.
+The repository currently has 486 automated tests across 46 test files. The
+gate also audits dependency vulnerabilities, rejects new Python security
+findings, checks publishable files for secrets, and builds the SDK wheel in a
+temporary directory.
 
-## Python SDK
+GitHub Actions repeats the checks on Ubuntu and adds CodeQL, dependency review,
+repository and container scanning, plus a container readiness smoke test. Tool
+versions, Python dependencies, the Python base image, and action revisions are
+pinned for reproducibility.
 
-The SDK can be installed independently:
+## Suggested review path
 
-```powershell
-python -m pip install -e .\sdk\python
-```
+For a focused technical review, these files show the main design decisions:
 
-See `docs/sdk-python.md` for authorization, approval, asynchronous use, typed
-errors, and guarded business-operation examples.
+1. [Policy evaluation](app/policy_engine.py) — condition evidence, complete
+   traces, and deterministic decision precedence.
+2. [Authorization service](app/services/authorization.py) — project isolation,
+   idempotency, approvals, integrity records, and event creation.
+3. [Persistence facade](app/evidence_store.py) and
+   [database boundary](app/storage/database.py) — transaction ownership,
+   migrations, WAL configuration, and database-enforced invariants.
+4. [Offline evidence verifier](app/evidence_verifier.py) — canonical records,
+   manifest validation, and integrity-chain verification.
+5. [SDK guard](sdk/python/src/decaustrum/guard.py) — enforcement immediately
+   before a real business callback.
+6. [Architecture notes](docs/architecture.md) — boundaries, failure semantics,
+   threat model, and deliberate tradeoffs.
 
-## Project documentation
+## Repository layout
 
-- `docs/architecture.md`: boundaries, transaction model, integrity, webhooks,
-  approvals, and security design;
-- `docs/operations.md`: configuration, production hardening, health, metrics,
-  logs, backups, and operational runbooks;
-- `docs/sdk-python.md`: SDK and real side-effect integration.
+| Path | Purpose |
+| --- | --- |
+| `app/` | FastAPI boundary, application services, policy engine, persistence, integrity, and worker. |
+| `policies/` | Validated seed policy templates used when a project is bootstrapped. |
+| `sdk/python/` | Independently installable synchronous and asynchronous Python SDK. |
+| `tests/` | Unit, integration, API, migration, security, and invariant tests. |
+| `docs/` | Architecture, operational runbooks, and SDK integration guidance. |
+| `scripts/` | Reproducible setup, verification, service, worker, and evidence-verification commands. |
+| `.github/` | CI, security analysis, dependency review, and automated dependency updates. |
 
-The project is local until its owner explicitly publishes or deploys it.
+## Scope and tradeoffs
+
+The current implementation deliberately optimizes for a reviewable local MVP:
+
+- SQLite in WAL mode keeps the transaction model easy to inspect and operate
+  locally. Multiple API processes would require a server database and a shared
+  rate limiter.
+- The SHA-256 decision chain detects missing, reordered, or changed records.
+  Without an externally trusted checkpoint or signature, it does not provide
+  non-repudiation against a privileged operator who can rewrite the database
+  and recompute the chain.
+- Webhooks use at-least-once delivery. Receivers must handle duplicate event
+  identifiers idempotently.
+- The local inline webhook dispatcher is an explicit development option; the
+  independent worker is the intended execution model.
+- No deployment is included. Publishing this repository does not expose an API,
+  database, customer environment, or production service.
+
+Production evolution would replace the local persistence and coordination
+components without changing the public authorization model.
+
+## Documentation
+
+- [HTTP API](docs/http-api.md): authentication boundaries, request semantics,
+  route map, errors, evidence exports, and approval workflow.
+- [Architecture](docs/architecture.md): boundaries, transactions, approvals,
+  integrity, webhooks, security model, and limitations.
+- [Operations](docs/operations.md): configuration, hardening, logs, metrics,
+  backups, incident procedures, and evidence verification.
+- [Python SDK](docs/sdk-python.md): synchronous and asynchronous clients, typed
+  errors, approval flows, and guarded side effects.
+- [Security policy](.github/SECURITY.md): private reporting, scope, and safe
+  evaluation expectations.
+
+## License, portfolio evaluation, and support
+
+Copyright (c) 2026 Tadeo Adrián Troncoso Taraborrelli. All rights reserved.
+
+DecAustrum is source-available for portfolio evaluation; it is not open-source
+software. Recruiters, interviewers, potential investors, partners, and
+prospective commercial licensees may inspect, clone, build, and run it in a
+local or isolated non-production environment solely to evaluate the project or
+its author's professional work.
+
+Production use, commercial exploitation, redistribution, public hosting,
+incorporation into another product or service, and third-party AI training are
+not permitted without a separate written agreement. GitHub's own public
+repository functionality remains governed by GitHub's applicable terms.
+
+No support, maintenance, warranty, security-fix commitment, or service level is
+provided. See the complete [license terms](LICENSE), [support policy](SUPPORT.md),
+[security policy](.github/SECURITY.md), [third-party notices](THIRD_PARTY_NOTICES.md),
+and [contribution policy](CONTRIBUTING.md).
+
+Publishing this source repository does not deploy DecAustrum or expose a hosted
+API, customer environment, database, or production service.

@@ -1,0 +1,167 @@
+DECAUSTRUM PORTFOLIO EVALUATION LICENSE
+Version 1.0 - 30 August 2026
+
+Copyright (c) 2026 Tadeo Adrián Troncoso Taraborrelli
+All rights reserved.
+
+This is a source-available portfolio evaluation license. It is not an
+open-source license.
+
+1. Definitions
+
+"Owner" means Tadeo Adrián Troncoso Taraborrelli.
+
+"Software" means the original DecAustrum source code, documentation, examples,
+configuration, and other materials made available with this license, excluding
+Third-Party Components.
+
+"Evaluator" means an individual or legal entity exercising the permission in
+Section 2.
+
+"Evaluation Purpose" means assessing the Software or the Owner's professional
+and technical work in connection with recruitment, employment, an interview,
+investment, procurement, partnership, due diligence, or a possible separately
+negotiated commercial license.
+
+"Production Use" means using the Software, or any portion or derivative of it,
+to operate real workflows, process real customer or business data, control real
+transactions or decisions, provide a service to another person, or support an
+internal or external product or service.
+
+"Third-Party Components" means software, data, certificates, documentation, or
+other materials owned by third parties and used by, referenced by, or
+distributed with the Software.
+
+2. Limited evaluation permission
+
+Subject to full compliance with this license, the Owner grants the Evaluator a
+limited, worldwide, non-exclusive, non-transferable, non-sublicensable,
+royalty-free permission to:
+
+a. view and inspect the Software;
+
+b. clone the repository and make a reasonable number of internal copies;
+
+c. build, install, run, and test the Software in a local or isolated internal
+   non-production environment that is not made available to the public or to
+   unrelated third parties; and
+
+d. make temporary internal modifications solely as reasonably necessary for
+   the Evaluation Purpose, provided those modifications are not distributed,
+   published, deployed, or used for any other purpose.
+
+An evaluation carried out by a commercial organization is permitted, provided
+the Software is used only for the Evaluation Purpose and is not incorporated
+into, used to operate, or used to improve that organization's products,
+services, production systems, or ordinary internal workflows.
+
+3. Restrictions
+
+Except where applicable law expressly requires otherwise, the Evaluator may
+not, and may not permit any other person to:
+
+a. make any Production Use of the Software;
+
+b. sell, rent, lease, sublicense, commercialize, monetize, or otherwise exploit
+   the Software;
+
+c. distribute, publish, mirror, repackage, or make the Software or a derivative
+   work available to any third party, except for repository viewing and forking
+   that GitHub's applicable terms expressly permit through GitHub's own
+   functionality;
+
+d. incorporate the Software or any substantial portion of it into another
+   product, service, library, platform, or hosted offering;
+
+e. use the Software or any substantial portion of it to create, operate, or
+   improve a competing or commercial product or service;
+
+f. use the Software as training data, fine-tuning data, evaluation data, or an
+   input corpus for an artificial-intelligence or machine-learning system,
+   except for processing performed by GitHub under rights separately granted
+   to GitHub by the repository owner through GitHub's applicable terms;
+
+g. remove, obscure, or alter any copyright, attribution, license, or proprietary
+   notice; or
+
+h. imply that the Owner endorses, supports, certifies, or is affiliated with the
+   Evaluator or any use of the Software.
+
+No patent, trademark, trade-name, branding, or other right is granted. All
+rights not expressly granted by this license are reserved by the Owner. Any
+other use requires a separate written agreement signed by the Owner.
+
+4. GitHub platform rights
+
+Nothing in this license limits permissions that the Owner grants directly to
+GitHub or that GitHub's applicable terms require for public-repository
+functionality. A view or fork made through GitHub does not, by itself, grant
+permission to deploy, redistribute outside that functionality, create a
+derivative product, or commercially exploit the Software.
+
+5. Ownership
+
+The Software is licensed, not sold. The Owner retains all right, title, and
+interest in and to the Software, including all copyright and other intellectual
+property rights. Evaluation copies and permitted temporary modifications do
+not transfer ownership.
+
+6. Third-party components
+
+Third-Party Components are not licensed under this license. They remain subject
+to their respective licenses and notices. The main third-party runtime
+components used by this release are identified in THIRD_PARTY_NOTICES.md, and
+the original license files distributed inside installed packages remain
+authoritative.
+
+7. No support or maintenance
+
+The Owner has no obligation to provide support, maintenance, hosting, training,
+documentation updates, compatibility work, security fixes, bug fixes, feature
+development, service levels, response times, or continued availability. The
+Owner may change or discontinue the Software at any time without notice.
+
+8. Disclaimer of warranties
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE,
+INCLUDING WARRANTIES OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR
+A PARTICULAR PURPOSE, ACCURACY, SECURITY, RELIABILITY, AVAILABILITY, OR THAT
+THE SOFTWARE WILL BE ERROR-FREE. THE SOFTWARE IS AN EVALUATION PROJECT AND IS
+NOT REPRESENTED AS CERTIFIED OR SUITABLE FOR PRODUCTION OR HIGH-RISK USE.
+
+9. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE OWNER WILL NOT BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR
+CONSEQUENTIAL LOSS OR DAMAGE, OR FOR ANY LOSS OF DATA, REVENUE, PROFITS,
+BUSINESS, GOODWILL, OR OPPORTUNITY, ARISING FROM OR RELATING TO THE SOFTWARE OR
+THIS LICENSE, UNDER ANY THEORY OF LIABILITY, EVEN IF ADVISED OF THE POSSIBILITY
+OF SUCH LOSS OR DAMAGE. WHERE LIABILITY CANNOT BE EXCLUDED, THE OWNER'S TOTAL
+AGGREGATE LIABILITY WILL NOT EXCEED THE AMOUNT, IF ANY, PAID BY THE EVALUATOR
+TO THE OWNER SPECIFICALLY FOR THE EVALUATION PERMISSION DURING THE PRECEDING
+TWELVE MONTHS, SUBJECT ALWAYS TO ANY MINIMUM LIABILITY REQUIRED BY LAW.
+
+10. Termination
+
+The permission in Section 2 terminates automatically upon breach of this
+license. On termination, the Evaluator must stop exercising the permission and
+delete evaluation copies and modifications under its control, except to the
+extent that GitHub is independently entitled to retain material under its
+applicable terms. Sections 3 through 12 survive termination.
+
+11. Governing law and severability
+
+This license is governed by the laws of Spain, without prejudice to mandatory
+rights or rules that cannot lawfully be excluded. If any provision is held
+unenforceable, it will be limited to the minimum extent necessary and the
+remaining provisions will continue in effect. A failure to enforce a provision
+is not a waiver.
+
+12. Separate commercial terms
+
+Commercial use, production deployment, redistribution, hosted service use,
+support, or any broader permission requires a separate written agreement. A
+request may be made through the Owner's GitHub profile, but no agreement exists
+unless it is confirmed in writing by the Owner.

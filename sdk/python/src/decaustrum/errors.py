@@ -1,25 +1,25 @@
-"""Exceptions raised by the RegTrace Python SDK."""
+"""Exceptions raised by the DecAustrum Python SDK."""
 
 from typing import Any
 from uuid import UUID
 
-from regtrace.models import AuthorizationDecision
+from decaustrum.models import AuthorizationDecision
 
 
-class RegTraceError(Exception):
+class DecAustrumError(Exception):
     """Base class for all SDK errors."""
 
 
-class RegTraceTransportError(RegTraceError):
+class DecAustrumTransportError(DecAustrumError):
     """The API could not be reached or timed out."""
 
 
-class RegTraceProtocolError(RegTraceError):
+class DecAustrumProtocolError(DecAustrumError):
     """The server returned a response that violates the API contract."""
 
 
-class RegTraceAPIError(RegTraceError):
-    """A structured non-success response returned by RegTrace."""
+class DecAustrumAPIError(DecAustrumError):
+    """A structured non-success response returned by DecAustrum."""
 
     def __init__(
         self,
@@ -42,47 +42,47 @@ class RegTraceAPIError(RegTraceError):
             f" [request_id={request_id}]" if request_id else ""
         )
         super().__init__(
-            f"RegTrace API error {status_code} ({code}): "
+            f"DecAustrum API error {status_code} ({code}): "
             f"{message}{request_suffix}"
         )
 
 
-class AuthenticationError(RegTraceAPIError):
+class AuthenticationError(DecAustrumAPIError):
     """The project API key is missing, invalid, or not authorized."""
 
 
-class NotFoundError(RegTraceAPIError):
-    """The requested RegTrace resource does not exist."""
+class NotFoundError(DecAustrumAPIError):
+    """The requested DecAustrum resource does not exist."""
 
 
-class ConflictError(RegTraceAPIError):
+class ConflictError(DecAustrumAPIError):
     """The request conflicts with persisted lifecycle state."""
 
 
-class ValidationError(RegTraceAPIError):
+class ValidationError(DecAustrumAPIError):
     """The request is not valid for the API contract or policy context."""
 
 
-class RateLimitError(RegTraceAPIError):
+class RateLimitError(DecAustrumAPIError):
     """The project or client exceeded its configured request rate."""
 
 
-class ServerError(RegTraceAPIError):
-    """RegTrace failed while processing the request."""
+class ServerError(DecAustrumAPIError):
+    """DecAustrum failed while processing the request."""
 
 
-class ActionDeniedError(RegTraceError):
+class ActionDeniedError(DecAustrumError):
     """A guarded business operation was denied by policy."""
 
     def __init__(self, decision: AuthorizationDecision) -> None:
         self.decision = decision
         super().__init__(
-            f"Action '{decision.action}' was denied by RegTrace: "
+            f"Action '{decision.action}' was denied by DecAustrum: "
             f"{decision.reason}"
         )
 
 
-class ApprovalRequiredError(RegTraceError):
+class ApprovalRequiredError(DecAustrumError):
     """A guarded operation needs human approval before execution."""
 
     def __init__(self, decision: AuthorizationDecision) -> None:
@@ -93,7 +93,7 @@ class ApprovalRequiredError(RegTraceError):
         )
 
 
-class ApprovalWaitTimeoutError(RegTraceError):
+class ApprovalWaitTimeoutError(DecAustrumError):
     """Polling did not reach a terminal approval state in time."""
 
     def __init__(self, decision_id: UUID, timeout: float) -> None:

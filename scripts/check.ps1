@@ -30,7 +30,7 @@ if (-not (Test-Path -LiteralPath $virtualPython)) {
 
 $artifactDirectory = Join-Path (
     [System.IO.Path]::GetTempPath()
-) ("regtrace-build-" + [guid]::NewGuid().ToString("N"))
+) ("decaustrum-build-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $artifactDirectory | Out-Null
 $sdkBuildSource = Join-Path $artifactDirectory "sdk-python"
 $wheelDirectory = Join-Path $artifactDirectory "wheel"
@@ -41,6 +41,12 @@ Copy-Item -LiteralPath (
 ) -Destination $sdkBuildSource
 Copy-Item -LiteralPath (
     Join-Path $repositoryRoot "sdk\python\README.md"
+) -Destination $sdkBuildSource
+Copy-Item -LiteralPath (
+    Join-Path $repositoryRoot "sdk\python\LICENSE"
+) -Destination $sdkBuildSource
+Copy-Item -LiteralPath (
+    Join-Path $repositoryRoot "sdk\python\THIRD_PARTY_NOTICES.md"
 ) -Destination $sdkBuildSource
 Copy-Item -LiteralPath (
     Join-Path $repositoryRoot "sdk\python\src"
@@ -77,4 +83,4 @@ try {
     Remove-Item -LiteralPath $resolvedArtifacts -Recurse -Force
 }
 
-Write-Host "RegTrace tests and package builds passed."
+Write-Host "DecAustrum tests and package builds passed."

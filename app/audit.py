@@ -14,8 +14,8 @@ from app.audit_models import (
 
 SYSTEM_BOOTSTRAP_AUDIT_CONTEXT = AuditContext(
     actor_type="SYSTEM",
-    actor_id="regtrace-bootstrap",
-    reason="RegTrace system bootstrap.",
+    actor_id="decaustrum-bootstrap",
+    reason="DecAustrum system bootstrap.",
 )
 
 

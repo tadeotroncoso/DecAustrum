@@ -11,9 +11,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --system --gid 10001 regtrace \
-    && useradd --system --uid 10001 --gid regtrace \
-        --home-dir /nonexistent --no-create-home regtrace
+RUN groupadd --system --gid 10001 decaustrum \
+    && useradd --system --uid 10001 --gid decaustrum \
+        --home-dir /nonexistent --no-create-home decaustrum
 
 COPY requirements/runtime.lock ./requirements/runtime.lock
 
@@ -21,6 +21,7 @@ RUN python -m pip install --upgrade "pip==${PIP_VERSION}" \
     && python -m pip install --no-deps \
         --requirement requirements/runtime.lock
 
+COPY --chown=10001:10001 LICENSE THIRD_PARTY_NOTICES.md ./
 COPY --chown=10001:10001 app ./app
 COPY --chown=10001:10001 policies ./policies
 

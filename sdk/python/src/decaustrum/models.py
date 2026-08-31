@@ -1,4 +1,4 @@
-"""Typed response models for the RegTrace runtime API."""
+"""Typed response models for the DecAustrum runtime API."""
 
 from copy import deepcopy
 from dataclasses import dataclass, field

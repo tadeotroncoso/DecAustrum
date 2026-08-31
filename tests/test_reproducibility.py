@@ -7,7 +7,7 @@ import yaml
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from app.observability import REGTRACE_VERSION
+from app.observability import DECAUSTRUM_VERSION
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +61,7 @@ def test_python_and_backend_versions_are_single_line_pins():
     assert (REPOSITORY_ROOT / ".python-version").read_text(
         encoding="utf-8"
     ).strip() == "3.12.14"
-    assert pyproject["project"]["version"] == REGTRACE_VERSION
+    assert pyproject["project"]["version"] == DECAUSTRUM_VERSION
     assert pyproject["project"]["requires-python"] == ">=3.12,<3.13"
     assert pyproject["build-system"]["requires"] == [
         "setuptools==84.0.0"
@@ -164,7 +164,7 @@ def test_compose_defines_hardened_api_worker_and_persistent_data():
         assert service["read_only"] is True
         assert service["cap_drop"] == ["ALL"]
         assert "no-new-privileges:true" in service["security_opt"]
-        assert "regtrace-data:/app/data" in service["volumes"]
+        assert "decaustrum-data:/app/data" in service["volumes"]
         assert service["env_file"] == [".env"]
 
     assert services["webhook-worker"]["healthcheck"] == {
@@ -174,10 +174,10 @@ def test_compose_defines_hardened_api_worker_and_persistent_data():
         "condition": "service_healthy"
     }
     assert services["api"]["ports"] == [
-        "127.0.0.1:${REGTRACE_PORT:-8000}:8000"
+        "127.0.0.1:${DECAUSTRUM_PORT:-8000}:8000"
     ]
-    assert compose["volumes"]["regtrace-data"]["name"] == (
-        "regtrace-data"
+    assert compose["volumes"]["decaustrum-data"]["name"] == (
+        "decaustrum-data"
     )
 
 
@@ -217,7 +217,7 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert "version: v0.74.0" in workflow_text
     assert "python -m pip wheel ./sdk/python" in workflow_text
     assert "docker compose config --quiet" in workflow_text
-    assert "docker build --tag regtrace-backend:ci ." in workflow_text
+    assert "docker build --tag decaustrum-backend:ci ." in workflow_text
     assert "/health/ready" in workflow_text
 
 
@@ -271,6 +271,58 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
         assert "bandit" in content
         assert "detect-secrets-hook" in content
         assert "validate_secrets_baseline.py" in content
+
+
+def test_bandit_scans_backend_sdk_and_scripts_in_every_security_gate():
+    paths = [
+        REPOSITORY_ROOT / "scripts" / "security-check.ps1",
+        REPOSITORY_ROOT / "scripts" / "security-check.sh",
+        REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml",
+    ]
+
+    for path in paths:
+        content = path.read_text(encoding="utf-8").replace("\\", "/")
+        command = re.search(
+            r"-m bandit(?P<arguments>.*?--quiet)",
+            content,
+            re.DOTALL,
+        )
+
+        assert command is not None
+
+        arguments = command.group("arguments")
+        assert "--recursive" in arguments
+
+        for target in ("app", "sdk/python/src", "scripts"):
+            assert target in arguments
+
+
+def test_posix_security_gate_fails_closed_during_file_discovery():
+    content = (
+        REPOSITORY_ROOT / "scripts" / "security-check.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "publishable_file_list=$(mktemp" in content
+    assert "if ! git ls-files" in content
+    assert '> "$publishable_file_list"' in content
+    assert '[ ! -s "$publishable_file_list" ]' in content
+    assert '< "$publishable_file_list"' in content
+    assert (
+        "git ls-files --cached --others --exclude-standard -z |"
+        not in content
+    )
+
+
+def test_release_contract_documents_historical_secret_strategy():
+    operations = (
+        REPOSITORY_ROOT / "docs" / "operations.md"
+    ).read_text(encoding="utf-8")
+    normalized_operations = " ".join(operations.split())
+
+    assert "full reachable Git history" in normalized_operations
+    assert "GitHub Secret Scanning" in normalized_operations
+    assert "Push Protection" in normalized_operations
+    assert "rotate or revoke it immediately" in normalized_operations
 
 
 def test_secret_baseline_is_explicit_and_reviewable():

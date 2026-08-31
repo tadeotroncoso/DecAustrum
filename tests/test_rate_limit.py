@@ -133,7 +133,7 @@ def test_rate_limiter_rejects_invalid_configuration(
 
 
 def test_rate_limit_subject_never_contains_raw_credentials():
-    secret = "regtrace-secret-api-key"
+    secret = "decaustrum-secret-api-key"
 
     subject = rate_limit_subject(
         credential=secret,

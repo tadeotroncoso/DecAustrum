@@ -27,14 +27,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.evidence_verifier",
         description=(
-            "Verify a RegTrace evidence bundle without connecting "
+            "Verify a DecAustrum evidence bundle without connecting "
             "to its database or API."
         ),
     )
     parser.add_argument(
         "archive",
         type=Path,
-        help="Path to a RegTrace evidence bundle ZIP.",
+        help="Path to a DecAustrum evidence bundle ZIP.",
     )
     parser.add_argument(
         "--expected-head-hash",
