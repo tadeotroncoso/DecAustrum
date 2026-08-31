@@ -25,7 +25,7 @@ def build_project() -> Project:
 
 
 def test_authenticate_project_returns_project():
-    api_key = "rtk_valid-project-key"
+    api_key = "dak_valid-project-key"
     project = build_project()
 
     store = Mock(spec=EvidenceStore)
@@ -71,7 +71,7 @@ def test_authenticate_project_rejects_unknown_key():
 
     with pytest.raises(HTTPException) as exc_info:
         authenticate_project(
-            provided_api_key="rtk_unknown-key",
+            provided_api_key="dak_unknown-key",
             store=store,
         )
 

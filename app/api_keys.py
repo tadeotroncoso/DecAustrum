@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, StringConstraints
 
 
-API_KEY_MARKER = "rtk_"
+API_KEY_MARKER = "dak_"
 
 ApiKeyHash = Annotated[
     str,

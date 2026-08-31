@@ -967,7 +967,7 @@ def test_admin_can_provision_project(
 
     assert project_data["name"] == "Acme Production"
     assert project_data["status"] == "ACTIVE"
-    assert issued_api_key.startswith("rtk_")
+    assert issued_api_key.startswith("dak_")
 
     stored_project = temporary_evidence_store.get_project(
         project_id
@@ -1043,7 +1043,7 @@ def test_admin_can_create_additional_project_api_key():
     issued_api_key = data["api_key"]
     metadata = data["key"]
 
-    assert issued_api_key.startswith("rtk_")
+    assert issued_api_key.startswith("dak_")
     assert issued_api_key != provisioned["api_key"]
     assert metadata["project_id"] == project_id
     assert metadata["key_prefix"] == (
