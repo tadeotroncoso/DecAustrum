@@ -15,7 +15,6 @@ from decaustrum.models import (
     ExecutionGrantConsumption,
 )
 
-
 ResultT = TypeVar("ResultT")
 
 

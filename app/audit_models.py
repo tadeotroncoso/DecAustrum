@@ -9,7 +9,6 @@ from pydantic import (
     field_validator,
 )
 
-
 AuditActorType = Literal[
     "ADMIN",
     "PROJECT",

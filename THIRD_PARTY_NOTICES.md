@@ -15,6 +15,7 @@ identify the upstream projects; upstream license files are authoritative.
 | `annotated-types` | 0.8.0 | MIT | [annotated-types/annotated-types](https://github.com/annotated-types/annotated-types) |
 | `anyio` | 4.14.2 | MIT | [agronholm/anyio](https://github.com/agronholm/anyio) |
 | `click` | 8.4.2 | BSD-3-Clause | [pallets/click](https://github.com/pallets/click) |
+| `colorama` | 0.4.6 | BSD-3-Clause | [tartley/colorama](https://github.com/tartley/colorama) |
 | `fastapi` | 0.141.1 | MIT | [fastapi/fastapi](https://github.com/fastapi/fastapi) |
 | `h11` | 0.16.0 | MIT | [python-hyper/h11](https://github.com/python-hyper/h11) |
 | `idna` | 3.18 | BSD-3-Clause | [kjd/idna](https://github.com/kjd/idna) |

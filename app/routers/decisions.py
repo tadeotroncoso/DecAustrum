@@ -16,7 +16,6 @@ from app.project_models import Project
 from app.routers.search import DecisionSearchDependency
 from app.services.projects import get_project_or_404
 
-
 router = APIRouter()
 
 

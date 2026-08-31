@@ -128,6 +128,11 @@ def consume_execution_grant_request(
             },
         ) from exc
 
+    if consumed.consumed_at is None or consumed.consumed_by is None:
+        raise RuntimeError(
+            "Consumed execution grant is missing resolution metadata."
+        )
+
     return ExecutionGrantConsumptionResponse(
         grant_id=consumed.grant_id,
         decision_id=consumed.decision_id,

@@ -19,7 +19,6 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
-
 TEST_API_KEY = "execution-grant-project-key"
 TEST_ADMIN_API_KEY = "execution-grant-admin-key"
 TEST_SECRET = "execution-grant-api-secret-at-least-32-bytes"

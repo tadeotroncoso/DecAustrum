@@ -12,14 +12,13 @@ from decaustrum._version import __version__
 from decaustrum.errors import (
     AuthenticationError,
     ConflictError,
-    NotFoundError,
-    RateLimitError,
     DecAustrumAPIError,
     DecAustrumProtocolError,
+    NotFoundError,
+    RateLimitError,
     ServerError,
     ValidationError,
 )
-
 
 SDK_VERSION = __version__
 DEFAULT_BASE_URL = "http://localhost:8000"

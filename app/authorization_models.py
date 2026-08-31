@@ -2,15 +2,13 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
+from pydantic import BaseModel, StringConstraints
+
 from app.decision_models import (
     PolicyEvidence,
     PolicyTraceEntry,
 )
 from app.policy_types import Decision
-
-from pydantic import BaseModel, StringConstraints
-
-
 
 NonEmptyString = Annotated[
     str,

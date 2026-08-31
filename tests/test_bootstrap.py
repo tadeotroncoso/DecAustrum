@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import datetime, timezone
 
+import pytest
+
 from app.api_keys import (
     generate_project_api_key,
     hash_api_key,
@@ -10,11 +12,7 @@ from app.bootstrap import (
     bootstrap_default_project,
 )
 from app.evidence_store import EvidenceStore
-
-import pytest
-
 from app.project_models import Project
-
 
 BOOTSTRAP_TIME = datetime(
     2026,

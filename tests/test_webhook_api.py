@@ -19,7 +19,6 @@ from app.webhooks import (
     verify_webhook_signature,
 )
 
-
 TEST_API_KEY = "test-api-key"
 TEST_ADMIN_API_KEY = "test-admin-api-key"
 TEST_MASTER_SECRET = "webhook-api-master-secret-value-123"

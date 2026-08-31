@@ -4,7 +4,6 @@ from pathlib import Path
 
 from decaustrum import __version__
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SDK_ROOT = REPOSITORY_ROOT / "sdk" / "python"
 SDK_PACKAGE = SDK_ROOT / "src" / "decaustrum"
@@ -16,6 +15,9 @@ def test_sdk_package_metadata_matches_runtime_version():
 
     project = pyproject["project"]
 
+    assert pyproject["build-system"]["requires"] == [
+        "setuptools==84.0.0"
+    ]
     assert project["name"] == "decaustrum-sdk"
     assert project["version"] == __version__
     assert project["requires-python"] == ">=3.11"

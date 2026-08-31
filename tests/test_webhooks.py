@@ -14,16 +14,15 @@ from app.webhook_models import (
     WebhookSubscriptionCreateRequest,
 )
 from app.webhooks import (
+    UrllibWebhookTransport,
+    WebhookTransportError,
     build_webhook_headers,
     canonical_webhook_payload,
     derive_webhook_signing_secret,
     ensure_public_webhook_destination,
     sign_webhook_payload,
-    UrllibWebhookTransport,
-    WebhookTransportError,
     verify_webhook_signature,
 )
-
 
 NOW = datetime(2026, 8, 29, 15, 0, tzinfo=timezone.utc)
 MASTER_SECRET = "m" * 32

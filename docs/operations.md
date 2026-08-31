@@ -201,31 +201,35 @@ the repository layer.
 DecAustrum has one declared Python minor version and two dependency sets:
 
 - `.python-version` pins the developer and CI interpreter;
-- `requirements/runtime.lock` is the exact API and worker dependency graph;
-- `requirements/dev.lock` extends that graph with the exact test and packaging
-  tools plus the local security scanners;
+- `requirements/runtime.lock` is the exact API and worker dependency graph,
+  including SHA-256 hashes for every accepted distribution artifact;
+- `requirements/dev.lock` contains that graph plus the exact test, packaging,
+  lint, type-checking, coverage, and local security tools, also with hashes;
 - `requirements/*.in` and `pyproject.toml` document the corresponding direct
   dependencies.
 
 Use `scripts/bootstrap.ps1` on Windows or `scripts/bootstrap.sh` on POSIX to
 create `.venv` from those files. Both scripts reject an incompatible Python
-minor, install the pinned pip version, check dependency consistency, and in
-development mode install the backend and SDK as editable packages. They never
+minor, install the pinned pip version, require every lock-file hash, check
+dependency consistency, and in development mode install the backend and SDK
+as editable packages. They never
 copy `.env.example` automatically because accepting placeholder credentials as
 runtime secrets would be unsafe.
 
 Before proposing a release, run `scripts/check.ps1` or `scripts/check.sh`. The
-release gate audits the locked dependency graph, rejects new Bandit findings,
+release gate audits the hashed dependency graph, rejects new Bandit findings,
 and scans every publishable file for secrets.
 Known test credentials, examples, and secret-setting names are stored only as
 reviewed fingerprints in the secret baseline; any changed or new value blocks
 the gate. The baseline validator also rejects every unreviewed entry and every
 entry confirmed as a real secret. Verification probes are disabled so
-candidate values never leave the machine. The gate then runs the complete test
-suite and builds the Python SDK
-wheel in a temporary directory. The backend's deployable artifact is the
-container image rather than a backend wheel. Existing Bandit false positives
-are suppressed only at their exact reviewed source lines and test IDs; there is
+candidate values never leave the machine. Ruff checks imports and high-signal
+correctness rules, mypy checks the backend, SDK, and Python scripts, and pytest
+enforces an 88.0% combined line-and-branch coverage floor. The gate then builds
+the Python SDK wheel in a temporary directory. The backend's deployable
+artifact is the container image rather than a backend wheel. Existing Bandit
+false positives are suppressed only at their exact reviewed source lines and
+test IDs; there is
 no global Bandit baseline or disabled rule that could hide a new finding.
 
 The local and CI secret gates intentionally scan the current publishable tree.
@@ -261,7 +265,8 @@ update is not accepted until the clean build and full CI gate pass.
 When intentionally updating dependencies:
 
 1. change the direct version in the matching `.in` file and `pyproject.toml`;
-2. resolve and review the complete exact graph in the matching `.lock` file;
+2. resolve the complete exact graph with `pip-compile --generate-hashes` and
+   review the matching `.lock` file;
 3. keep runtime versions identical wherever they appear;
 4. rebuild from a new virtual environment and run the release gate;
 5. for a base-image or GitHub Action update, record an immutable digest or

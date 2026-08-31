@@ -10,7 +10,6 @@ from pydantic import (
     model_validator,
 )
 
-
 ExecutionGrantStatus = Literal[
     "ACTIVE",
     "CONSUMED",

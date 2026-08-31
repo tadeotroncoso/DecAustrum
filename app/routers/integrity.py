@@ -23,7 +23,6 @@ from app.services.integrity import (
 )
 from app.services.projects import get_project_or_404
 
-
 router = APIRouter()
 
 ExpectedHeadHashQuery = Annotated[

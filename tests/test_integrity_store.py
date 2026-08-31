@@ -15,7 +15,6 @@ from app.storage.decisions import (
     AuthorizationDecisionRepository,
 )
 
-
 EVALUATED_AT = datetime(
     2026,
     8,

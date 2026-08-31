@@ -23,7 +23,6 @@ from app.services.approvals import (
     resolve_approval_request,
 )
 
-
 router = APIRouter()
 
 

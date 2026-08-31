@@ -5,13 +5,14 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 
-from app.audit_models import AuditContext
 from app.approval_models import (
     ApprovalGrantResponse,
     ApprovalRecord,
     ApprovalResolutionRequest,
     ApprovalResolutionStatus,
 )
+from app.audit_models import AuditContext
+from app.authorization_models import AuthorizationRequest
 from app.evidence_store import EvidenceStore
 from app.exceptions import (
     ApprovalAlreadyResolvedError,
@@ -27,7 +28,6 @@ from app.execution_models import (
     ExecutionGrantRecord,
 )
 from app.idempotency import build_request_fingerprint
-from app.authorization_models import AuthorizationRequest
 
 
 def resolve_approval_request(
@@ -244,7 +244,7 @@ def approve_approval_request(
                 "current_status": exc.current_status,
             },
         ) from exc
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
         concurrent_approval = store.get_approval(
             decision_id=decision_id,
             project_id=project_id,
@@ -269,7 +269,7 @@ def approve_approval_request(
                         "has expired."
                     ),
                 },
-            )
+            ) from exc
 
         if (
             concurrent_approval.status != "APPROVED"
@@ -287,7 +287,7 @@ def approve_approval_request(
                     ),
                     "current_status": concurrent_approval.status,
                 },
-            )
+            ) from exc
 
         approved = concurrent_approval
         persisted_grant = concurrent_grant

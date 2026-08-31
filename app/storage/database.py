@@ -3,7 +3,6 @@ from pathlib import Path
 
 from app.project_models import DEFAULT_PROJECT_ID
 
-
 CREATE_DECISIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS authorization_decisions (
     decision_id TEXT PRIMARY KEY,

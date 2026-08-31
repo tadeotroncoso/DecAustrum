@@ -16,6 +16,7 @@ from app.services.projects import get_project_or_404
 from app.webhook_models import (
     WebhookDelivery,
     WebhookDeliveryDetail,
+    WebhookDeliveryOutcome,
     WebhookDispatchSummary,
     WebhookEvent,
     WebhookSecretRotationResponse,
@@ -29,7 +30,6 @@ from app.webhooks import (
     build_webhook_headers,
     derive_webhook_signing_secret,
 )
-
 
 WEBHOOK_MAX_ATTEMPTS = 5
 WEBHOOK_BASE_RETRY_SECONDS = 30
@@ -340,6 +340,7 @@ def dispatch_pending_webhooks(
         )
         status_code = None
         error = None
+        outcome: WebhookDeliveryOutcome
 
         try:
             response = transport.send(

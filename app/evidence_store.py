@@ -9,6 +9,11 @@ from app.api_keys import (
     ProjectApiKeyMetadata,
     ProjectApiKeyRecord,
 )
+from app.approval_models import (
+    ApprovalRecord,
+    ApprovalResolutionStatus,
+    ApprovalStatus,
+)
 from app.audit import build_audit_event
 from app.audit_models import (
     AdministrativeAuditEvent,
@@ -16,11 +21,6 @@ from app.audit_models import (
     AuditActorType,
     AuditContext,
     AuditResourceType,
-)
-from app.approval_models import (
-    ApprovalRecord,
-    ApprovalResolutionStatus,
-    ApprovalStatus,
 )
 from app.authorization_models import AuthorizationResponse
 from app.evidence_models import (
@@ -53,8 +53,8 @@ from app.policy_models import (
 )
 from app.project_models import Project, ProjectStatus
 from app.storage.api_keys import ProjectApiKeyRepository
-from app.storage.audit import AdministrativeAuditRepository
 from app.storage.approvals import ApprovalRepository
+from app.storage.audit import AdministrativeAuditRepository
 from app.storage.database import SQLiteDatabase
 from app.storage.decisions import (
     AuthorizationDecisionRepository,

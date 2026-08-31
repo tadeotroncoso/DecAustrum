@@ -29,7 +29,6 @@ from app.integrity_models import (
     VerifiableDecisionRecord,
 )
 
-
 EVIDENCE_BUNDLE_FILES = {
     "manifest.json",
     "records.ndjson",

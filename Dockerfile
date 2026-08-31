@@ -18,7 +18,7 @@ RUN groupadd --system --gid 10001 decaustrum \
 COPY requirements/runtime.lock ./requirements/runtime.lock
 
 RUN python -m pip install --upgrade "pip==${PIP_VERSION}" \
-    && python -m pip install --no-deps \
+    && python -m pip install --require-hashes --no-deps \
         --requirement requirements/runtime.lock
 
 COPY --chown=10001:10001 LICENSE THIRD_PARTY_NOTICES.md ./

@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.authorization_models import AuthorizationResponse
 
-
 Sha256Digest = Annotated[
     str,
     StringConstraints(pattern=r"^[0-9a-f]{64}$"),

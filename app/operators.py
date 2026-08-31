@@ -1,5 +1,6 @@
 from typing import Any
 
+
 def _values_have_compatible_types(
     actual_value: Any,
     expected_value: Any,

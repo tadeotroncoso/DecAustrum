@@ -12,7 +12,6 @@ from app.project_models import Project
 from app.webhook_models import WebhookSubscription
 from app.webhooks import build_webhook_event
 
-
 NOW = datetime(2026, 8, 29, 16, 0, tzinfo=timezone.utc)
 
 

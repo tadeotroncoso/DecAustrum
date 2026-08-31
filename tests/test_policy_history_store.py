@@ -13,7 +13,6 @@ from app.exceptions import (
 from app.policy_models import Policy
 from app.project_models import Project
 
-
 CREATED_AT = datetime(
     2026,
     8,

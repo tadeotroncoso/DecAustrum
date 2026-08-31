@@ -39,7 +39,6 @@ from app.webhook_models import (
 )
 from app.webhooks import WebhookTransport
 
-
 router = APIRouter()
 
 

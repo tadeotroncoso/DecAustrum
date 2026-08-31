@@ -25,7 +25,6 @@ from app.webhooks import (
     WebhookTransport,
 )
 
-
 DATABASE_PATH = Path("data/decaustrum.db")
 evidence_store = EvidenceStore(DATABASE_PATH)
 webhook_transport = UrllibWebhookTransport()

@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any, Literal, Mapping, Sequence, cast
 from uuid import UUID
 
-
 Decision = Literal["ALLOW", "REQUIRE_APPROVAL", "DENY"]
 ApprovalStatus = Literal[
     "PENDING",

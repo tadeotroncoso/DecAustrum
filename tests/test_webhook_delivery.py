@@ -17,7 +17,6 @@ from app.webhooks import (
     verify_webhook_signature,
 )
 
-
 NOW = datetime(2026, 8, 29, 17, 0, tzinfo=timezone.utc)
 MASTER_SECRET = "delivery-master-secret-value-12345"
 

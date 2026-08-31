@@ -28,7 +28,10 @@ else
     lock_file="$repository_root/requirements/dev.lock"
 fi
 
-"$virtual_python" -m pip install --no-deps --requirement "$lock_file"
+"$virtual_python" -m pip install \
+    --require-hashes \
+    --no-deps \
+    --requirement "$lock_file"
 "$virtual_python" -m pip check
 
 if [ "${1:-}" != "--runtime" ]; then

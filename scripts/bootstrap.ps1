@@ -55,7 +55,10 @@ $lockFile = if ($RuntimeOnly) {
     Join-Path $repositoryRoot "requirements\dev.lock"
 }
 
-& $virtualPython -m pip install --no-deps --requirement $lockFile
+& $virtualPython -m pip install `
+    --require-hashes `
+    --no-deps `
+    --requirement $lockFile
 Assert-NativeCommandSucceeded `
     -ExitCode $LASTEXITCODE `
     -Operation "Locked dependency installation"

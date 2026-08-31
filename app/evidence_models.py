@@ -18,7 +18,6 @@ from app.integrity_models import (
 )
 from app.policy_types import Decision
 
-
 DecisionSortOrder = Literal["asc", "desc"]
 EvidenceExportFormat = Literal["json", "ndjson", "csv"]
 EvidenceApprovalStatus = ApprovalStatus | Literal["NONE"]

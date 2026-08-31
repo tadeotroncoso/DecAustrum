@@ -22,7 +22,6 @@ from app.webhook_models import (
     validate_webhook_url,
 )
 
-
 AUDIT_WEBHOOK_EVENT_TYPES: dict[AuditAction, WebhookEventType] = {
     "PROJECT_CREATED": "project.created",
     "PROJECT_STATUS_CHANGED": "project.status_changed",

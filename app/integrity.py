@@ -1,13 +1,12 @@
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 from app.authorization_models import AuthorizationResponse
 from app.integrity_models import DecisionIntegrityProof
 
-
 INTEGRITY_ALGORITHM = "SHA-256"
-INTEGRITY_SCHEMA_VERSION = 1
+INTEGRITY_SCHEMA_VERSION: Literal[1] = 1
 
 
 def canonical_json(value: Any) -> str:

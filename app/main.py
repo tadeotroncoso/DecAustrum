@@ -19,8 +19,8 @@ from app.dependencies import (
 )
 from app.http_middleware import SecurityObservabilityMiddleware
 from app.observability import (
-    MetricsRegistry,
     DECAUSTRUM_VERSION,
+    MetricsRegistry,
     configure_json_logging,
 )
 from app.policy_engine import POLICIES_DIRECTORY
@@ -48,7 +48,6 @@ from app.security import (
     EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE,
     get_configured_api_key,
 )
-
 
 LOGGER = logging.getLogger("decaustrum.lifecycle")
 

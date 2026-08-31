@@ -1,7 +1,9 @@
-from fastapi.testclient import TestClient
-import pytest
 import sqlite3
-from app.bootstrap import bootstrap_default_project
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
+
+import pytest
+from fastapi.testclient import TestClient
 
 from app.api_keys import (
     ProjectApiKeyRecord,
@@ -9,19 +11,16 @@ from app.api_keys import (
     get_api_key_prefix,
     hash_api_key,
 )
-from app.project_models import (
-    DEFAULT_PROJECT_ID,
-    Project,
-)
-
 from app.authorization_models import AuthorizationResponse
+from app.bootstrap import bootstrap_default_project
 from app.evidence_store import EvidenceStore
 from app.main import app, get_evidence_store
 from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
-
-from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from app.project_models import (
+    DEFAULT_PROJECT_ID,
+    Project,
+)
 
 TEST_API_KEY = "test-api-key"
 TEST_ADMIN_API_KEY = "test-admin-api-key"

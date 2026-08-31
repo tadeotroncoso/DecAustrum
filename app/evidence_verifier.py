@@ -10,7 +10,6 @@ from app.evidence import (
     verify_evidence_bundle,
 )
 
-
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 

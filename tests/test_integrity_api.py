@@ -14,7 +14,6 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
-
 TEST_API_KEY = "test-api-key"
 TEST_ADMIN_API_KEY = "test-admin-api-key"
 

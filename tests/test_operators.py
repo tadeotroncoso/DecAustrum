@@ -1,5 +1,6 @@
-from app.operators import evaluate_operator
 import pytest
+
+from app.operators import evaluate_operator
 
 
 def test_greater_than():

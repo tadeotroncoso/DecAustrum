@@ -1,6 +1,5 @@
 from typing import Literal
 
-
 Decision = Literal[
     "ALLOW",
     "REQUIRE_APPROVAL",

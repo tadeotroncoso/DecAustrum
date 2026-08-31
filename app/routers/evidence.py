@@ -34,7 +34,6 @@ from app.services.evidence import (
 )
 from app.services.projects import get_project_or_404
 
-
 router = APIRouter()
 
 ExportFormatQuery = Annotated[

@@ -130,7 +130,7 @@ decision. Reusing that key for a different request is rejected as a conflict.
 ## Quick start
 
 The supported runtime is CPython 3.12. Local setup, CI, and the container image
-use pinned dependency locks.
+use pinned dependency locks with SHA-256 hashes.
 
 The values in `.env.example` are placeholders for local development. Do not
 reuse them in a shared or production environment.
@@ -240,15 +240,18 @@ or:
 sh ./scripts/check.sh
 ```
 
-The repository currently has 486 automated tests across 46 test files. The
-gate also audits dependency vulnerabilities, rejects new Python security
-findings, checks publishable files for secrets, and builds the SDK wheel in a
-temporary directory.
+The repository has more than 480 automated tests across 46 test files. The
+gate enforces an 88.0% combined line-and-branch coverage floor, checks lint
+with Ruff and static types with mypy, audits dependency vulnerabilities,
+rejects new Python security findings, scans publishable files for secrets, and
+builds the SDK wheel in a temporary directory.
 
-GitHub Actions repeats the checks on Ubuntu and adds CodeQL, dependency review,
-repository and container scanning, plus a container readiness smoke test. Tool
+GitHub Actions repeats the checks on Ubuntu, validates the POSIX automation,
+and adds CodeQL, dependency review, repository and container scanning, plus a
+container readiness smoke test. Tool
 versions, Python dependencies, the Python base image, and action revisions are
-pinned for reproducibility.
+pinned for reproducibility. Locked Python artifacts are additionally verified
+against their recorded SHA-256 hashes during installation and audit.
 
 ## Suggested review path
 

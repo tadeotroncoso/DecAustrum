@@ -2,8 +2,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Callable
 from uuid import uuid4
 
 from starlette.datastructures import Headers, MutableHeaders
@@ -22,7 +21,6 @@ from app.rate_limit import (
     rate_limit_subject,
 )
 from app.runtime_config import RuntimeSettings
-
 
 LOGGER = logging.getLogger("decaustrum.http")
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -682,12 +680,12 @@ class SecurityObservabilityMiddleware:
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode("ascii")),
         ]
-        message: Message = {
+        start_message: Message = {
             "type": "http.response.start",
             "status": status_code,
             "headers": raw_headers,
         }
-        mutable_headers = MutableHeaders(scope=message)
+        mutable_headers = MutableHeaders(scope=start_message)
         self._apply_response_headers(
             headers=mutable_headers,
             request_id=request_id,
@@ -699,7 +697,7 @@ class SecurityObservabilityMiddleware:
         for name, value in (extra_headers or {}).items():
             mutable_headers[name] = value
 
-        await send(message)
+        await send(start_message)
         await send(
             {
                 "type": "http.response.body",

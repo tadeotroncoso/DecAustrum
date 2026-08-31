@@ -50,7 +50,7 @@ try {
 
     & $virtualPython -m pip_audit `
         --requirement "requirements\dev.lock" `
-        --no-deps `
+        --require-hashes `
         --disable-pip `
         --progress-spinner off
     Assert-NativeCommandSucceeded `

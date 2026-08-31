@@ -2,11 +2,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query
 
+from app.audit_models import AuditContext
 from app.dependencies import (
     get_evidence_store,
     require_admin_access,
 )
-from app.audit_models import AuditContext
 from app.evidence_store import EvidenceStore
 from app.policy_models import (
     Policy,
@@ -24,7 +24,6 @@ from app.services.policies import (
     rollback_policy,
 )
 from app.services.projects import get_project_or_404
-
 
 router = APIRouter()
 

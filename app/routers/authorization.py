@@ -18,7 +18,6 @@ from app.project_models import Project
 from app.runtime_config import RuntimeSettings
 from app.services.authorization import authorize_request
 
-
 router = APIRouter()
 
 

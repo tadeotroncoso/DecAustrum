@@ -13,7 +13,6 @@ from app.services.webhooks import dispatch_pending_webhooks
 from app.webhook_models import WebhookDispatchSummary
 from app.webhooks import UrllibWebhookTransport, WebhookTransport
 
-
 LOGGER = logging.getLogger("decaustrum.webhook_worker")
 
 

@@ -8,7 +8,6 @@ from app.api_keys import hash_api_key
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
 
-
 API_KEY_ENVIRONMENT_VARIABLE = "DECAUSTRUM_API_KEY"
 ADMIN_API_KEY_ENVIRONMENT_VARIABLE = (
     "DECAUSTRUM_ADMIN_API_KEY"

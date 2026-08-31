@@ -11,7 +11,6 @@ from app.execution_models import (
     ExecutionGrantRecord,
 )
 
-
 EXECUTION_GRANT_PREFIX = "rgt_exec_v1"
 
 

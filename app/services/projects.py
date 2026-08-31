@@ -3,7 +3,6 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 
-from app.audit_models import AuditContext
 from app.api_keys import (
     ProjectApiKeyMetadata,
     ProjectApiKeyProvisioningResponse,
@@ -12,6 +11,7 @@ from app.api_keys import (
     get_api_key_prefix,
     hash_api_key,
 )
+from app.audit_models import AuditContext
 from app.evidence_store import EvidenceStore
 from app.policy_models import Policy
 from app.project_models import (

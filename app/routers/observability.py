@@ -6,7 +6,6 @@ from app.dependencies import (
 )
 from app.observability import MetricsRegistry
 
-
 router = APIRouter()
 
 

@@ -23,11 +23,19 @@ cp "$repository_root/sdk/python/THIRD_PARTY_NOTICES.md" "$sdk_build_source/"
 cp -R "$repository_root/sdk/python/src" "$sdk_build_source/"
 
 "$virtual_python" -m pip check
-"$virtual_python" -m pytest -q -p no:cacheprovider
+"$virtual_python" -m ruff check app sdk/python/src scripts tests
+"$virtual_python" -m mypy
+"$virtual_python" -m pytest \
+    -q \
+    -p no:cacheprovider \
+    --cov=app \
+    --cov=decaustrum \
+    --cov-branch \
+    --cov-report=term-missing
 "$virtual_python" -m pip wheel \
     --no-deps \
     --no-build-isolation \
     --wheel-dir "$wheel_directory" \
     "$sdk_build_source"
 
-echo "DecAustrum tests and package builds passed."
+echo "DecAustrum quality, tests, and package builds passed."

@@ -24,7 +24,6 @@ from app.execution_models import (
 from app.idempotency import build_request_fingerprint
 from app.project_models import DEFAULT_PROJECT_ID
 
-
 SECRET = "execution-grant-store-secret-at-least-32-bytes"
 
 

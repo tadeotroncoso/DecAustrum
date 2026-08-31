@@ -9,7 +9,6 @@ from packaging.utils import canonicalize_name
 
 from app.observability import DECAUSTRUM_VERSION
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = REPOSITORY_ROOT / "requirements"
 
@@ -20,9 +19,13 @@ def parse_pinned_requirements(path: Path) -> dict[str, str]:
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
 
-        if not line or line.startswith("#") or line.startswith("-r "):
+        if (
+            not line
+            or line.startswith(("#", "-r ", "--hash="))
+        ):
             continue
 
+        line = line.removesuffix("\\").strip()
         requirement = Requirement(line)
         specifiers = list(requirement.specifier)
 
@@ -34,6 +37,33 @@ def parse_pinned_requirements(path: Path) -> dict[str, str]:
         pinned[name] = specifiers[0].version
 
     return pinned
+
+
+def requirement_hashes(path: Path) -> dict[str, list[str]]:
+    hashes: dict[str, list[str]] = {}
+    current_name = None
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+
+        if not line or line.startswith(("#", "-r ")):
+            continue
+
+        if line.startswith("--hash=sha256:"):
+            assert current_name is not None
+            digest = (
+                line.removesuffix("\\").split(":", 1)[1].strip()
+            )
+            assert re.fullmatch(r"[0-9a-f]{64}", digest)
+            hashes[current_name].append(digest)
+            continue
+
+        requirement = Requirement(line.removesuffix("\\").strip())
+        current_name = canonicalize_name(requirement.name)
+        assert current_name not in hashes
+        hashes[current_name] = []
+
+    return hashes
 
 
 def project_dependencies() -> dict[str, str]:
@@ -93,14 +123,31 @@ def test_development_input_is_covered_by_lock():
     assert "-r runtime.in" in (
         REQUIREMENTS / "dev.in"
     ).read_text(encoding="utf-8")
-    assert "-r runtime.lock" in (
-        REQUIREMENTS / "dev.lock"
-    ).read_text(encoding="utf-8")
+    runtime_lock = parse_pinned_requirements(
+        REQUIREMENTS / "runtime.lock"
+    )
+    assert runtime_lock.items() <= development_lock.items()
     assert {
         "bandit",
+        "coverage",
         "detect-secrets",
+        "mypy",
         "pip-audit",
+        "pip-tools",
+        "pytest-cov",
+        "ruff",
+        "types-pyyaml",
     } <= development_input.keys()
+
+
+def test_lock_files_contain_reviewable_sha256_hashes():
+    for lock_name in ("runtime.lock", "dev.lock"):
+        lock_path = REQUIREMENTS / lock_name
+        locked = parse_pinned_requirements(lock_path)
+        hashes = requirement_hashes(lock_path)
+
+        assert hashes.keys() == locked.keys()
+        assert all(package_hashes for package_hashes in hashes.values())
 
 
 def test_pip_version_is_consistent_across_automation():
@@ -132,6 +179,7 @@ def test_automated_lock_installation_never_resolves_unpinned_packages():
     for path in paths:
         content = path.read_text(encoding="utf-8")
         assert "--no-deps" in content
+        assert "--require-hashes" in content
 
 
 def test_container_is_pinned_and_runs_without_root():
@@ -206,6 +254,12 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert workflow_text.count("permissions:") >= 5
     assert "permissions: {}" in workflow_text
     assert "python -m pytest -q -p no:cacheprovider" in workflow_text
+    assert "--cov=app" in workflow_text
+    assert "--cov=decaustrum" in workflow_text
+    assert "--cov-branch" in workflow_text
+    assert "python -m ruff check" in workflow_text
+    assert "python -m mypy" in workflow_text
+    assert "bash -n scripts/*.sh" in workflow_text
     assert "python -m pip_audit" in workflow_text
     assert "python -m bandit" in workflow_text
     assert "detect-secrets-hook" in workflow_text
@@ -261,6 +315,11 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
         assert "sdk-python" in content
         assert "sdk/python/src" in content.replace("\\", "/")
         assert "security-check" in content
+        assert "ruff check" in content
+        assert "mypy" in content
+        assert "--cov=app" in content
+        assert "--cov=decaustrum" in content
+        assert "--cov-branch" in content
 
     for path in [
         scripts / "security-check.ps1",
@@ -268,6 +327,7 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
     ]:
         content = path.read_text(encoding="utf-8")
         assert "pip_audit" in content
+        assert "--require-hashes" in content
         assert "bandit" in content
         assert "detect-secrets-hook" in content
         assert "validate_secrets_baseline.py" in content

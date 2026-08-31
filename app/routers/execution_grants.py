@@ -15,7 +15,6 @@ from app.services.execution_grants import (
     consume_execution_grant_request,
 )
 
-
 router = APIRouter()
 
 

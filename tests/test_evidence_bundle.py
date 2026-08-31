@@ -29,7 +29,6 @@ from app.integrity import (
 )
 from app.integrity_models import VerifiableDecisionRecord
 
-
 PROJECT_ID = UUID("10000000-0000-0000-0000-000000000001")
 BASE_TIME = datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc)
 

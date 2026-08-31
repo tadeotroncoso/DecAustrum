@@ -57,10 +57,28 @@ try {
     Assert-NativeCommandSucceeded `
         -ExitCode $LASTEXITCODE `
         -Operation "Dependency consistency check"
-    & $virtualPython -m pytest -q -p no:cacheprovider
+    & $virtualPython -m ruff check `
+        app `
+        "sdk\python\src" `
+        scripts `
+        tests
     Assert-NativeCommandSucceeded `
         -ExitCode $LASTEXITCODE `
-        -Operation "Test suite"
+        -Operation "Python lint check"
+    & $virtualPython -m mypy
+    Assert-NativeCommandSucceeded `
+        -ExitCode $LASTEXITCODE `
+        -Operation "Static type check"
+    & $virtualPython -m pytest `
+        -q `
+        -p no:cacheprovider `
+        --cov=app `
+        --cov=decaustrum `
+        --cov-branch `
+        --cov-report=term-missing
+    Assert-NativeCommandSucceeded `
+        -ExitCode $LASTEXITCODE `
+        -Operation "Test and coverage suite"
     & $virtualPython -m pip wheel `
         --no-deps `
         --no-build-isolation `
@@ -83,4 +101,4 @@ try {
     Remove-Item -LiteralPath $resolvedArtifacts -Recurse -Force
 }
 
-Write-Host "DecAustrum tests and package builds passed."
+Write-Host "DecAustrum quality, tests, and package builds passed."

@@ -13,7 +13,6 @@ from pydantic import (
     model_validator,
 )
 
-
 WebhookEventType = Literal[
     "authorization.created",
     "approval.requested",
@@ -144,7 +143,7 @@ def validate_webhook_url(value: str) -> str:
         )
 
     try:
-        parsed.port
+        _ = parsed.port
     except ValueError as exc:
         raise ValueError("Webhook URL contains an invalid port.") from exc
 
@@ -190,10 +189,14 @@ def _normalize_event_selectors(
     return values
 
 
+def _default_event_selectors() -> list[WebhookEventSelector]:
+    return ["*"]
+
+
 class WebhookSubscriptionCreateRequest(BaseModel):
     url: WebhookUrl
     event_types: list[WebhookEventSelector] = Field(
-        default_factory=lambda: ["*"],
+        default_factory=_default_event_selectors,
         min_length=1,
         max_length=len(WEBHOOK_EVENT_TYPES),
     )

@@ -10,7 +10,6 @@ from pydantic import (
     model_validator,
 )
 
-
 ApprovalStatus = Literal[
     "PENDING",
     "APPROVED",

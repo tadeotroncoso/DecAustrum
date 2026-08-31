@@ -21,7 +21,7 @@ cd "$repository_root"
 
 "$virtual_python" -m pip_audit \
     --requirement requirements/dev.lock \
-    --no-deps \
+    --require-hashes \
     --disable-pip \
     --progress-spinner off
 

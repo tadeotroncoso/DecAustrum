@@ -11,7 +11,6 @@ from app.execution_grants import (
 )
 from app.execution_models import ExecutionGrantPayload
 
-
 SECRET = "execution-grant-test-secret-at-least-32-bytes"
 
 

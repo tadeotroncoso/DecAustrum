@@ -2,9 +2,8 @@ from pathlib import Path
 
 import yaml
 
-from app.policy_models import Policy
-
 from app.exceptions import DuplicatePolicyIdError
+from app.policy_models import Policy
 
 
 def load_policy(path: Path) -> Policy:

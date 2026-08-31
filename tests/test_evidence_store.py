@@ -2,14 +2,15 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
-from app.project_models import (
-    DEFAULT_PROJECT_ID,
-    Project,
-)
 
 import pytest
-from app.idempotency import IdempotencyRecord
 
+from app.api_keys import (
+    ProjectApiKeyRecord,
+    generate_project_api_key,
+    get_api_key_prefix,
+    hash_api_key,
+)
 from app.approval_models import ApprovalRecord
 from app.authorization_models import AuthorizationResponse
 from app.decision_models import (
@@ -23,14 +24,13 @@ from app.exceptions import (
     ApprovalNotFoundError,
     PolicyVersionConflictError,
 )
+from app.idempotency import IdempotencyRecord
 from app.policy_models import Policy
-
-from app.api_keys import (
-    ProjectApiKeyRecord,
-    generate_project_api_key,
-    get_api_key_prefix,
-    hash_api_key,
+from app.project_models import (
+    DEFAULT_PROJECT_ID,
+    Project,
 )
+
 
 def build_authorization() -> AuthorizationResponse:
     reason = (

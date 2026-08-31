@@ -32,7 +32,6 @@ from app.services.projects import (
     revoke_api_key,
 )
 
-
 router = APIRouter()
 
 

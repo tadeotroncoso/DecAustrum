@@ -8,7 +8,6 @@ from app.dependencies import (
 from app.evidence_store import EvidenceStore
 from app.observability import MetricsRegistry
 
-
 router = APIRouter()
 
 

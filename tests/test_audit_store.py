@@ -16,7 +16,6 @@ from app.evidence_store import EvidenceStore
 from app.policy_models import Policy, PolicyCondition
 from app.project_models import Project
 
-
 AUDIT_TIME = datetime(
     2026,
     8,

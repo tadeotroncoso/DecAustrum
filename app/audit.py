@@ -11,7 +11,6 @@ from app.audit_models import (
     AuditResourceType,
 )
 
-
 SYSTEM_BOOTSTRAP_AUDIT_CONTEXT = AuditContext(
     actor_type="SYSTEM",
     actor_id="decaustrum-bootstrap",

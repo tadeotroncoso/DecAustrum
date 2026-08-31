@@ -17,7 +17,6 @@ from app.evidence_models import (
 from app.evidence_store import EvidenceStore
 from app.integrity_models import VerifiableDecisionRecord
 
-
 MAX_EVIDENCE_EXPORT_RECORDS = 10_000
 MAX_EVIDENCE_BUNDLE_CHAIN_RECORDS = 100_000
 

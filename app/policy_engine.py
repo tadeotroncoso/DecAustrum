@@ -1,9 +1,6 @@
 from pathlib import Path
 from typing import Any
 
-from app.operators import evaluate_operator
-from app.policy_loader import load_policies
-from app.policy_models import Policy
 from app.decision_models import (
     ConditionEvidence,
     PolicyEvaluation,
@@ -11,7 +8,10 @@ from app.decision_models import (
     PolicyTraceEntry,
 )
 from app.exceptions import InvalidPolicyContextError
-
+from app.operators import evaluate_operator
+from app.policy_loader import load_policies
+from app.policy_models import Policy
+from app.policy_types import Decision
 
 POLICIES_DIRECTORY = Path("policies")
 
@@ -31,7 +31,7 @@ def evaluate_policy(
     if policies is None:
         policies = load_policies(POLICIES_DIRECTORY)
 
-    final_decision = "ALLOW"
+    final_decision: Decision = "ALLOW"
     winning_policy_id = None
     winning_policy_version = None
     winning_reason = "No policy required approval or denial."

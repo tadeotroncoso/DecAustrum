@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-
 DECAUSTRUM_VERSION = "0.1.0"
 HTTP_DURATION_BUCKETS = (
     0.005,
@@ -310,7 +309,10 @@ class JsonLogFormatter(logging.Formatter):
             if value is not None:
                 payload[field_name] = value
 
-        if record.exc_info is not None:
+        if (
+            record.exc_info is not None
+            and record.exc_info[0] is not None
+        ):
             exception_type = record.exc_info[0]
             payload["exception_type"] = exception_type.__name__
 

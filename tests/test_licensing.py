@@ -5,7 +5,6 @@ from pathlib import Path
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 LICENSE_EXPRESSION = (
     "LicenseRef-DecAustrum-Portfolio-Evaluation-1.0"
@@ -24,9 +23,13 @@ def locked_requirement_names(path: Path) -> set[str]:
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
 
-        if not line or line.startswith("#") or line.startswith("-r "):
+        if (
+            not line
+            or line.startswith(("#", "-r ", "--hash="))
+        ):
             continue
 
+        line = line.removesuffix("\\").strip()
         names.add(canonicalize_name(Requirement(line).name))
 
     return names

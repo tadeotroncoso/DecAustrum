@@ -3,14 +3,6 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
-
-from app.bootstrap import bootstrap_default_project
-from app.evidence_store import EvidenceStore
-from app.main import app, get_evidence_store
-from app.policy_engine import POLICIES_DIRECTORY
-from app.policy_loader import load_policies
-from app.project_models import DEFAULT_PROJECT_ID
 from decaustrum import (
     ActionDeniedError,
     ApprovalRequiredError,
@@ -21,7 +13,14 @@ from decaustrum import (
     DecAustrumClient,
     DecAustrumGuard,
 )
+from fastapi.testclient import TestClient
 
+from app.bootstrap import bootstrap_default_project
+from app.evidence_store import EvidenceStore
+from app.main import app, get_evidence_store
+from app.policy_engine import POLICIES_DIRECTORY
+from app.policy_loader import load_policies
+from app.project_models import DEFAULT_PROJECT_ID
 
 TEST_API_KEY = "python-sdk-project-key"
 TEST_ADMIN_API_KEY = "python-sdk-admin-key"

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from app.api_keys import (
     ProjectApiKeyRecord,
@@ -13,6 +13,7 @@ from app.project_models import (
     DEFAULT_PROJECT_NAME,
     Project,
 )
+
 
 def bootstrap_default_project(
     store: EvidenceStore,
