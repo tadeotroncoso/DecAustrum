@@ -10,6 +10,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.json_values import validate_json_value
+
 ExecutionGrantStatus = Literal[
     "ACTIVE",
     "CONSUMED",
@@ -128,6 +130,11 @@ class ExecutionGrantConsumptionRequest(BaseModel):
     ]
     context: dict[str, Any]
     consumed_by: ConsumerIdentifier
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def require_strict_json_context(cls, value: Any) -> Any:
+        return validate_json_value(value, name="context")
 
 
 class ExecutionGrantConsumptionResponse(BaseModel):

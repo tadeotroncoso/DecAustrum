@@ -2,6 +2,8 @@
 
 import json
 from copy import deepcopy
+from ipaddress import ip_address
+from math import isfinite
 from typing import Any, Callable, Mapping, TypeVar
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -43,7 +45,28 @@ def normalize_base_url(base_url: str) -> str:
     ):
         raise ValueError("base_url must be an HTTP(S) origin or URL prefix")
 
+    if parsed.scheme == "http" and not _is_loopback_host(
+        parsed.hostname
+    ):
+        raise ValueError(
+            "base_url must use HTTPS unless it targets a loopback host"
+        )
+
     return normalized
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    if hostname is None:
+        return False
+
+    normalized = hostname.rstrip(".").lower()
+    if normalized == "localhost":
+        return True
+
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 def normalize_api_key(api_key: str) -> str:
@@ -83,9 +106,7 @@ def normalize_context(context: Mapping[str, Any]) -> dict[str, Any]:
         raise TypeError("context must be a mapping")
 
     normalized = deepcopy(dict(context))
-
-    if not all(isinstance(key, str) for key in normalized):
-        raise ValueError("context keys must be strings")
+    _require_string_object_keys(normalized)
 
     try:
         json.dumps(normalized, allow_nan=False)
@@ -93,6 +114,19 @@ def normalize_context(context: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("context must contain valid JSON values") from exc
 
     return normalized
+
+
+def _require_string_object_keys(value: Any) -> None:
+    if isinstance(value, Mapping):
+        for key, nested_value in value.items():
+            if not isinstance(key, str):
+                raise ValueError("context object keys must be strings")
+            _require_string_object_keys(nested_value)
+        return
+
+    if isinstance(value, (list, tuple)):
+        for nested_value in value:
+            _require_string_object_keys(nested_value)
 
 
 def normalize_uuid(value: UUID | str, name: str) -> UUID:
@@ -105,9 +139,12 @@ def normalize_uuid(value: UUID | str, name: str) -> UUID:
 def normalize_timeout(value: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError("timeout must be a number")
-    if value <= 0:
+    normalized = float(value)
+    if not isfinite(normalized):
+        raise ValueError("timeout must be finite")
+    if normalized <= 0:
         raise ValueError("timeout must be greater than zero")
-    return float(value)
+    return normalized
 
 
 def normalize_page(limit: int, offset: int) -> tuple[int, int]:

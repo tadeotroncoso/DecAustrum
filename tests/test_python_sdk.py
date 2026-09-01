@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -216,18 +217,196 @@ def test_sdk_validates_context_before_sending_request():
     assert calls == 0
 
 
+def test_sdk_rejects_nested_non_string_context_keys():
+    client, http_client = sdk_client(
+        lambda _: httpx.Response(200, json=decision_payload())
+    )
+    try:
+        with pytest.raises(ValueError, match="keys must be strings"):
+            client.authorize(
+                agent="agent",
+                action="action",
+                context={"nested": {1: "invalid"}},
+            )
+    finally:
+        http_client.close()
+
+
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [float("nan"), float("inf"), float("-inf")],
+)
+def test_sdk_rejects_non_finite_timeout(invalid_timeout):
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"status": "ok"})
+        )
+    )
+    try:
+        with pytest.raises(ValueError, match="timeout must be finite"):
+            DecAustrumClient(
+                api_key="project-key",
+                base_url="https://decaustrum.example",
+                timeout=invalid_timeout,
+                http_client=http_client,
+            )
+    finally:
+        http_client.close()
+
+
+@pytest.mark.parametrize(
+    "invalid_number",
+    [
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+    ],
+)
+def test_sdk_rejects_non_finite_context_before_sending(invalid_number):
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=decision_payload())
+
+    client, http_client = sdk_client(handler)
+    try:
+        with pytest.raises(ValueError, match="valid JSON"):
+            client.authorize(
+                agent="agent",
+                action="action",
+                context={"nested": {"amount": invalid_number}},
+            )
+    finally:
+        http_client.close()
+
+    assert calls == 0
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://api.example.com",
+        "http://192.0.2.10:8000",
+    ],
+)
+def test_sdk_rejects_remote_plain_http_base_url(base_url):
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"status": "ok"})
+        )
+    )
+    try:
+        with pytest.raises(ValueError, match="must use HTTPS"):
+            DecAustrumClient(
+                api_key="project-key",
+                base_url=base_url,
+                http_client=http_client,
+            )
+    finally:
+        http_client.close()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:8000",
+        "http://localhost.:8000",
+        "http://127.0.0.1:8000",
+        "http://[::1]:8000",
+        "https://api.example.com",
+    ],
+)
+def test_sdk_allows_https_or_loopback_http(base_url):
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"status": "ok"})
+        )
+    )
+    try:
+        client = DecAustrumClient(
+            api_key="project-key",
+            base_url=base_url,
+            http_client=http_client,
+        )
+        assert client.health().ready is True
+    finally:
+        http_client.close()
+
+
+def test_sdk_never_follows_redirects_with_api_key():
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            307,
+            headers={"Location": "http://remote.example/collect"},
+        )
+
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    )
+    client = DecAustrumClient(
+        api_key="project-key",
+        base_url="https://decaustrum.example",
+        http_client=http_client,
+    )
+    try:
+        with pytest.raises(DecAustrumProtocolError):
+            client.health()
+    finally:
+        http_client.close()
+
+    assert requested_urls == ["https://decaustrum.example/health"]
+
+
 def test_approval_grant_repr_never_contains_bearer_token():
     payload = {
         **approval_payload("APPROVED"),
-        "execution_grant": "rgt_exec_v1.super-secret-token",
+        "execution_grant": "dag_exec_v1.super-secret-token",
         "grant_id": str(GRANT_ID),
         "grant_expires_at": "2026-08-30T10:05:00+00:00",
     }
 
     grant = ApprovalGrant.from_dict(payload)
 
-    assert grant.execution_grant == "rgt_exec_v1.super-secret-token"
+    assert grant.execution_grant == "dag_exec_v1.super-secret-token"
     assert "super-secret-token" not in repr(grant)
+
+
+def test_sdk_approval_sends_reason_without_resolver_identity():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == (
+            f"/v1/approvals/{DECISION_ID}/approve"
+        )
+        assert json.loads(request.content) == {
+            "reason": "Evidence reviewed."
+        }
+        return httpx.Response(
+            200,
+            json={
+                **approval_payload("APPROVED"),
+                "execution_grant": "dag_exec_v1.test-token",
+                "grant_id": str(GRANT_ID),
+                "grant_expires_at": (
+                    "2026-08-30T10:05:00+00:00"
+                ),
+            },
+        )
+
+    client, http_client = sdk_client(handler)
+    try:
+        grant = client.approve(
+            DECISION_ID,
+            reason=" Evidence reviewed. ",
+        )
+    finally:
+        http_client.close()
+
+    assert grant.status == "APPROVED"
 
 
 @pytest.mark.parametrize(
@@ -321,7 +500,7 @@ def test_guard_consumes_grant_before_calling_approved_operation():
 
     try:
         result = guard.execute_approved(
-            execution_grant="rgt_exec_v1.token",
+            execution_grant="dag_exec_v1.token",
             agent="test-agent",
             action="test-action",
             context={"resource_id": "resource-1"},

@@ -4,7 +4,11 @@ import secrets
 from fastapi import HTTPException
 from fastapi.security import APIKeyHeader
 
-from app.api_keys import hash_api_key
+from app.api_keys import (
+    ProjectApiKeyPrincipal,
+    ProjectApiKeyRole,
+    hash_api_key,
+)
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
 
@@ -127,6 +131,16 @@ def authenticate_project(
     provided_api_key: str | None,
     store: EvidenceStore,
 ) -> Project:
+    return authenticate_project_api_key(
+        provided_api_key=provided_api_key,
+        store=store,
+    ).project
+
+
+def authenticate_project_api_key(
+    provided_api_key: str | None,
+    store: EvidenceStore,
+) -> ProjectApiKeyPrincipal:
     if not provided_api_key:
         raise HTTPException(
             status_code=401,
@@ -138,13 +152,13 @@ def authenticate_project(
 
     key_hash = hash_api_key(provided_api_key)
 
-    project = (
-        store.get_active_project_by_api_key_hash(
+    principal = (
+        store.get_active_api_key_principal_by_hash(
             key_hash
         )
     )
 
-    if project is None:
+    if principal is None:
         raise HTTPException(
             status_code=401,
             detail={
@@ -153,4 +167,23 @@ def authenticate_project(
             },
         )
 
-    return project
+    return principal
+
+
+def require_project_api_key_role(
+    principal: ProjectApiKeyPrincipal,
+    *allowed_roles: ProjectApiKeyRole,
+) -> None:
+    if principal.role in allowed_roles:
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "insufficient_api_key_role",
+            "message": (
+                "This API key role is not permitted to perform "
+                "the requested operation."
+            ),
+        },
+    )

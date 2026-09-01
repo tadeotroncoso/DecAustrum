@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     StringConstraints,
     field_validator,
@@ -125,17 +126,9 @@ class ApprovalRequestPage(BaseModel):
     limit: int
     offset: int
 
-ResolverIdentifier = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        min_length=1,
-    ),
-]
-
-
 class ApprovalResolutionRequest(BaseModel):
-    resolved_by: ResolverIdentifier
+    model_config = ConfigDict(extra="forbid")
+
     reason: Annotated[
         str,
         StringConstraints(

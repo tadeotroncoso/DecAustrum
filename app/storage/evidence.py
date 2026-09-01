@@ -7,6 +7,8 @@ from app.evidence_models import (
     DecisionSearchFilters,
     EvidenceExportSnapshot,
 )
+from app.exceptions import EvidenceExportSizeLimitError
+from app.integrity import canonical_json
 from app.integrity_models import (
     DecisionIntegrityProof,
     VerifiableDecisionRecord,
@@ -16,6 +18,8 @@ from app.storage.decisions import (
     AuthorizationDecisionRepository,
 )
 from app.storage.integrity import DecisionIntegrityRepository
+
+DEFAULT_EVIDENCE_BYTE_LIMIT = 32 * 1024 * 1024
 
 
 class EvidenceRepository:
@@ -159,6 +163,7 @@ class EvidenceRepository:
         project_id: UUID,
         filters: DecisionSearchFilters,
         maximum_records: int,
+        maximum_bytes: int,
     ) -> tuple[
         EvidenceExportSnapshot,
         list[VerifiableDecisionRecord],
@@ -226,15 +231,31 @@ class EvidenceRepository:
                 filters=filters,
                 max_sequence_number=max_sequence_number,
             )
-            rows = connection.execute(
+            cursor = connection.execute(
                 query,
                 record_parameters,
-            ).fetchall()
+            )
+            records: list[VerifiableDecisionRecord] = []
+            serialized_bytes = 0
 
-        return snapshot, [
-            self._row_to_record(row)
-            for row in rows
-        ]
+            for row in cursor:
+                record = self._row_to_record(row)
+                record_bytes = len(
+                    canonical_json(
+                        record.model_dump(mode="json")
+                    ).encode("utf-8")
+                ) + 1
+
+                if serialized_bytes + record_bytes > maximum_bytes:
+                    raise EvidenceExportSizeLimitError(
+                        "records",
+                        maximum_bytes,
+                    )
+
+                serialized_bytes += record_bytes
+                records.append(record)
+
+        return snapshot, records
 
     def iter_records(
         self,
@@ -269,24 +290,43 @@ class EvidenceRepository:
         project_id: UUID,
         filters: DecisionSearchFilters,
         max_sequence_number: int,
+        maximum_bytes: int = DEFAULT_EVIDENCE_BYTE_LIMIT,
     ) -> list[VerifiableDecisionRecord]:
-        return list(
-            self.iter_records(
-                project_id=project_id,
-                filters=filters,
-                max_sequence_number=max_sequence_number,
-            )
-        )
+        records: list[VerifiableDecisionRecord] = []
+        serialized_bytes = 0
+
+        for record in self.iter_records(
+            project_id=project_id,
+            filters=filters,
+            max_sequence_number=max_sequence_number,
+        ):
+            record_bytes = len(
+                canonical_json(
+                    record.model_dump(mode="json")
+                ).encode("utf-8")
+            ) + 1
+
+            if serialized_bytes + record_bytes > maximum_bytes:
+                raise EvidenceExportSizeLimitError(
+                    "records",
+                    maximum_bytes,
+                )
+
+            serialized_bytes += record_bytes
+            records.append(record)
+
+        return records
 
     def list_chain(
         self,
         *,
         project_id: UUID,
         max_sequence_number: int,
+        maximum_bytes: int = DEFAULT_EVIDENCE_BYTE_LIMIT,
     ) -> list[DecisionIntegrityProof]:
         with self.database.connect() as connection:
             connection.row_factory = sqlite3.Row
-            rows = connection.execute(
+            cursor = connection.execute(
                 """
                 SELECT *
                 FROM decision_integrity_records
@@ -298,12 +338,31 @@ class EvidenceRepository:
                     str(project_id),
                     max_sequence_number,
                 ),
-            ).fetchall()
+            )
+            proofs: list[DecisionIntegrityProof] = []
+            serialized_bytes = 0
 
-        return [
-            DecisionIntegrityRepository._row_to_proof(row)
-            for row in rows
-        ]
+            for row in cursor:
+                proof = DecisionIntegrityRepository._row_to_proof(row)
+                proof_bytes = len(
+                    canonical_json(
+                        proof.model_dump(mode="json")
+                    ).encode("utf-8")
+                ) + 1
+
+                if serialized_bytes + proof_bytes > maximum_bytes:
+                    raise EvidenceExportSizeLimitError(
+                        "chain",
+                        maximum_bytes,
+                    )
+
+                serialized_bytes += proof_bytes
+                proofs.append(proof)
+
+        return proofs
 
 
-__all__ = ["EvidenceRepository"]
+__all__ = [
+    "DEFAULT_EVIDENCE_BYTE_LIMIT",
+    "EvidenceRepository",
+]

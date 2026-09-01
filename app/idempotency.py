@@ -16,6 +16,7 @@ def build_request_fingerprint(
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+        allow_nan=False,
     )
 
     return hashlib.sha256(

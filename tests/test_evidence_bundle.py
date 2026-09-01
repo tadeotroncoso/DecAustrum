@@ -22,6 +22,7 @@ from app.evidence_models import (
     DecisionSearchFilters,
     EvidenceExportSnapshot,
 )
+from app.exceptions import EvidenceExportSizeLimitError
 from app.integrity import (
     build_decision_integrity_proof,
     canonical_json,
@@ -329,3 +330,53 @@ def test_json_ndjson_and_csv_exports_are_machine_readable():
     assert json.loads(csv_data[0]["context_json"]) == {
         "ticket_id": 1
     }
+
+
+@pytest.mark.parametrize(
+    "dangerous_agent",
+    [
+        "=HYPERLINK(\"https://example.com\")",
+        "+SUM(1,1)",
+        "-1+1",
+        "@SUM(1,1)",
+        "\t=SUM(1,1)",
+        "  =SUM(1,1)",
+        "\u00a0=SUM(1,1)",
+    ],
+)
+def test_csv_export_neutralizes_spreadsheet_formulas(
+    dangerous_agent,
+):
+    authorization = build_authorization(1).model_copy(
+        update={"agent": dangerous_agent}
+    )
+    proof = build_decision_integrity_proof(
+        authorization=authorization,
+        sequence_number=1,
+        previous_hash=None,
+    )
+    record = VerifiableDecisionRecord(
+        decision=authorization,
+        integrity=proof,
+    )
+
+    csv_record = next(
+        csv.DictReader(
+            io.StringIO(
+                b"".join(iter_csv_export([record])).decode("utf-8")
+            )
+        )
+    )
+
+    assert csv_record["agent"] == "'" + dangerous_agent
+
+
+def test_evidence_archive_rejects_content_beyond_byte_limit():
+    with pytest.raises(EvidenceExportSizeLimitError) as captured:
+        build_evidence_bundle_archive(
+            build_bundle(),
+            maximum_bytes=1,
+        )
+
+    assert captured.value.scope == "bundle"
+    assert captured.value.maximum_bytes == 1

@@ -141,7 +141,11 @@ def test_development_input_is_covered_by_lock():
 
 
 def test_lock_files_contain_reviewable_sha256_hashes():
-    for lock_name in ("runtime.lock", "dev.lock"):
+    for lock_name in (
+        "bootstrap.lock",
+        "runtime.lock",
+        "dev.lock",
+    ):
         lock_path = REQUIREMENTS / lock_name
         locked = parse_pinned_requirements(lock_path)
         hashes = requirement_hashes(lock_path)
@@ -150,8 +154,14 @@ def test_lock_files_contain_reviewable_sha256_hashes():
         assert all(package_hashes for package_hashes in hashes.values())
 
 
-def test_pip_version_is_consistent_across_automation():
-    expected = "26.2.1"
+def test_pip_bootstrap_is_pinned_and_hash_verified_everywhere():
+    assert parse_pinned_requirements(
+        REQUIREMENTS / "bootstrap.in"
+    ) == {"pip": "26.2.1"}
+    assert parse_pinned_requirements(
+        REQUIREMENTS / "bootstrap.lock"
+    ) == {"pip": "26.2.1"}
+
     paths = [
         REPOSITORY_ROOT / "Dockerfile",
         REPOSITORY_ROOT / "scripts" / "bootstrap.ps1",
@@ -160,12 +170,11 @@ def test_pip_version_is_consistent_across_automation():
     ]
 
     for path in paths:
-        assert f"pip=={expected}" in path.read_text(encoding="utf-8") or (
-            path.name == "Dockerfile"
-            and f"PIP_VERSION={expected}" in path.read_text(
-                encoding="utf-8"
-            )
+        content = path.read_text(encoding="utf-8")
+        assert "requirements/bootstrap.lock" in content.replace(
+            "\\", "/"
         )
+        assert "pip install --upgrade pip==" not in content
 
 
 def test_automated_lock_installation_never_resolves_unpinned_packages():
@@ -194,7 +203,11 @@ def test_container_is_pinned_and_runs_without_root():
         r"FROM python:3\.12\.14-slim-bookworm@sha256:[0-9a-f]{64}",
         first_from,
     )
-    assert "COPY requirements/runtime.lock" in dockerfile
+    assert "# syntax=docker/dockerfile" not in dockerfile
+    assert (
+        "COPY requirements/bootstrap.lock requirements/runtime.lock"
+        in dockerfile
+    )
     assert "USER 10001:10001" in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert '"--no-access-log"' in dockerfile
@@ -261,6 +274,7 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert "python -m mypy" in workflow_text
     assert "bash -n scripts/*.sh" in workflow_text
     assert "python -m pip_audit" in workflow_text
+    assert "requirements/bootstrap.lock" in workflow_text
     assert "python -m bandit" in workflow_text
     assert "detect-secrets-hook" in workflow_text
     assert "validate_secrets_baseline.py" in workflow_text
@@ -301,8 +315,15 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
     for path in bootstrap_files:
         content = path.read_text(encoding="utf-8")
         assert "requirements" in content
+        assert "bootstrap.lock" in content
         assert "dev.lock" in content
         assert "runtime.lock" in content
+
+    powershell_bootstrap = bootstrap_files[0].read_text(
+        encoding="utf-8"
+    )
+    assert "[string]$Python" in powershell_bootstrap
+    assert "DECAUSTRUM_PYTHON" in powershell_bootstrap
 
     for path in run_files:
         assert ".env" in path.read_text(encoding="utf-8")

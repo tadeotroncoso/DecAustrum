@@ -5,13 +5,14 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.api_keys import hash_api_key
+from app.api_keys import ProjectApiKeyPrincipal, hash_api_key
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
 from app.security import (
     authenticate_admin,
     authenticate_project,
     get_configured_execution_grant_secret,
+    require_project_api_key_role,
 )
 
 
@@ -27,10 +28,15 @@ def build_project() -> Project:
 def test_authenticate_project_returns_project():
     api_key = "dak_valid-project-key"
     project = build_project()
+    principal = ProjectApiKeyPrincipal(
+        api_key_id=uuid4(),
+        role="RUNTIME",
+        project=project,
+    )
 
     store = Mock(spec=EvidenceStore)
-    store.get_active_project_by_api_key_hash.return_value = (
-        project
+    store.get_active_api_key_principal_by_hash.return_value = (
+        principal
     )
 
     authenticated_project = authenticate_project(
@@ -40,7 +46,7 @@ def test_authenticate_project_returns_project():
 
     assert authenticated_project == project
 
-    store.get_active_project_by_api_key_hash.assert_called_once_with(
+    store.get_active_api_key_principal_by_hash.assert_called_once_with(
         hash_api_key(api_key)
     )
 
@@ -60,12 +66,12 @@ def test_authenticate_project_rejects_missing_key():
         "message": "A valid API key is required.",
     }
 
-    store.get_active_project_by_api_key_hash.assert_not_called()
+    store.get_active_api_key_principal_by_hash.assert_not_called()
 
 
 def test_authenticate_project_rejects_unknown_key():
     store = Mock(spec=EvidenceStore)
-    store.get_active_project_by_api_key_hash.return_value = (
+    store.get_active_api_key_principal_by_hash.return_value = (
         None
     )
 
@@ -80,6 +86,22 @@ def test_authenticate_project_rejects_unknown_key():
         "code": "invalid_api_key",
         "message": "A valid API key is required.",
     }
+
+
+def test_project_api_key_role_rejects_disallowed_operation():
+    principal = ProjectApiKeyPrincipal(
+        api_key_id=uuid4(),
+        role="RUNTIME",
+        project=build_project(),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        require_project_api_key_role(principal, "REVIEWER")
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == (
+        "insufficient_api_key_role"
+    )
 
 
 def test_authenticate_admin_accepts_matching_key():

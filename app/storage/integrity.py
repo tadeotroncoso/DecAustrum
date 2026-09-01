@@ -1,4 +1,5 @@
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -124,7 +125,7 @@ class DecisionIntegrityRepository:
                 GROUP BY project_id
                 ORDER BY project_id
                 """
-            ).fetchall()
+            )
 
             for project_row in projects:
                 project_id = UUID(project_row["project_id"])
@@ -160,7 +161,7 @@ class DecisionIntegrityRepository:
                     ORDER BY evaluated_at, decision_id
                     """,
                     (str(project_id),),
-                ).fetchall()
+                )
 
                 previous_hash = None
 
@@ -264,6 +265,38 @@ class DecisionIntegrityRepository:
             failure=failure,
         )
 
+    def _iter_verification_rows(
+        self,
+        project_id: UUID,
+        max_sequence_number: int,
+    ) -> Iterator[sqlite3.Row]:
+        with self.database.connect() as connection:
+            connection.row_factory = sqlite3.Row
+            cursor = connection.execute(
+                """
+                SELECT
+                    d.*,
+                    i.sequence_number,
+                    i.previous_hash,
+                    i.payload_hash,
+                    i.record_hash,
+                    i.algorithm,
+                    i.schema_version,
+                    i.created_at AS integrity_created_at
+                FROM decision_integrity_records AS i
+                JOIN authorization_decisions AS d
+                    ON d.decision_id = i.decision_id
+                    AND d.project_id = i.project_id
+                WHERE i.project_id = ?
+                AND i.sequence_number <= ?
+                ORDER BY i.sequence_number
+                """,
+                (str(project_id), max_sequence_number),
+            )
+
+            for row in cursor:
+                yield row
+
     def verify(
         self,
         project_id: UUID,
@@ -271,46 +304,69 @@ class DecisionIntegrityRepository:
     ) -> DecisionIntegrityVerification:
         with self.database.connect() as connection:
             connection.row_factory = sqlite3.Row
-
-            decision_rows = connection.execute(
+            counts = connection.execute(
                 """
-                SELECT *
-                FROM authorization_decisions
-                WHERE project_id = ?
+                SELECT
+                    (
+                        SELECT COUNT(*)
+                        FROM authorization_decisions
+                        WHERE project_id = ?
+                    ) AS decision_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM decision_integrity_records
+                        WHERE project_id = ?
+                    ) AS integrity_count,
+                    COALESCE(
+                        (
+                            SELECT MAX(sequence_number)
+                            FROM decision_integrity_records
+                            WHERE project_id = ?
+                        ),
+                        0
+                    ) AS max_sequence_number
                 """,
-                (str(project_id),),
-            ).fetchall()
-            integrity_rows = connection.execute(
+                (
+                    str(project_id),
+                    str(project_id),
+                    str(project_id),
+                ),
+            ).fetchone()
+            total_decisions = int(counts["decision_count"])
+            integrity_count = int(counts["integrity_count"])
+            max_sequence_number = int(
+                counts["max_sequence_number"]
+            )
+            unmatched_row = connection.execute(
                 """
-                SELECT *
-                FROM decision_integrity_records
-                WHERE project_id = ?
-                ORDER BY sequence_number
+                SELECT d.decision_id
+                FROM authorization_decisions AS d
+                LEFT JOIN decision_integrity_records AS i
+                    ON i.decision_id = d.decision_id
+                    AND i.project_id = d.project_id
+                WHERE d.project_id = ?
+                AND i.decision_id IS NULL
+                UNION ALL
+                SELECT i.decision_id
+                FROM decision_integrity_records AS i
+                LEFT JOIN authorization_decisions AS d
+                    ON d.decision_id = i.decision_id
+                    AND d.project_id = i.project_id
+                WHERE i.project_id = ?
+                AND d.decision_id IS NULL
+                LIMIT 1
                 """,
-                (str(project_id),),
-            ).fetchall()
-
-        decisions_by_id = {
-            row["decision_id"]: row
-            for row in decision_rows
-        }
-        integrity_decision_ids = {
-            row["decision_id"]
-            for row in integrity_rows
-        }
-        total_decisions = len(decision_rows)
+                (str(project_id), str(project_id)),
+            ).fetchone()
 
         if (
-            len(integrity_rows) != total_decisions
-            or integrity_decision_ids
-            != set(decisions_by_id)
+            integrity_count != total_decisions
+            or unmatched_row is not None
         ):
-            unmatched_id = next(
-                iter(
-                    set(decisions_by_id)
-                    ^ integrity_decision_ids
-                ),
-                None,
+            unmatched_id = (
+                unmatched_row["decision_id"]
+                if unmatched_row is not None
+                else None
             )
 
             return self._failed_verification(
@@ -329,15 +385,19 @@ class DecisionIntegrityRepository:
                         else None
                     ),
                     expected=str(total_decisions),
-                    actual=str(len(integrity_rows)),
+                    actual=str(integrity_count),
                 ),
             )
 
         previous_hash = None
         checked_records = 0
+        expected_checkpoint_seen = expected_head_hash is None
 
         for expected_sequence, row in enumerate(
-            integrity_rows,
+            self._iter_verification_rows(
+                project_id,
+                max_sequence_number,
+            ),
             start=1,
         ):
             decision_id = UUID(row["decision_id"])
@@ -419,9 +479,7 @@ class DecisionIntegrityRepository:
             try:
                 authorization = (
                     AuthorizationDecisionRepository
-                    ._row_to_authorization(
-                        decisions_by_id[row["decision_id"]]
-                    )
+                    ._row_to_authorization(row)
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 return self._failed_verification(
@@ -442,7 +500,7 @@ class DecisionIntegrityRepository:
 
             try:
                 integrity_created_at = datetime.fromisoformat(
-                    row["created_at"]
+                    row["integrity_created_at"]
                 )
             except (TypeError, ValueError):
                 integrity_created_at = None
@@ -463,7 +521,7 @@ class DecisionIntegrityRepository:
                         expected=(
                             authorization.evaluated_at.isoformat()
                         ),
-                        actual=row["created_at"],
+                        actual=row["integrity_created_at"],
                     ),
                 )
 
@@ -515,14 +573,13 @@ class DecisionIntegrityRepository:
                 )
 
             previous_hash = row["record_hash"]
+            if row["record_hash"] == expected_head_hash:
+                expected_checkpoint_seen = True
             checked_records += 1
 
         if (
             expected_head_hash is not None
-            and expected_head_hash not in {
-                row["record_hash"]
-                for row in integrity_rows
-            }
+            and not expected_checkpoint_seen
         ):
             return self._failed_verification(
                 project_id=project_id,

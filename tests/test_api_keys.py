@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.api_keys import (
+    ProjectApiKeyCreateRequest,
     ProjectApiKeyMetadata,
     ProjectApiKeyRecord,
     generate_project_api_key,
@@ -49,6 +50,7 @@ def test_project_api_key_record_accepts_hash():
     )
 
     assert record.key_prefix == secret[:12]
+    assert record.role == "RUNTIME"
     assert record.revoked_at is None
     assert not hasattr(record, "secret")
 
@@ -74,5 +76,18 @@ def test_public_api_key_metadata_excludes_secrets():
 
     public_data = metadata.model_dump()
 
+    assert public_data["role"] == "RUNTIME"
     assert "api_key" not in public_data
     assert "key_hash" not in public_data
+
+
+def test_api_key_create_request_accepts_known_roles():
+    assert ProjectApiKeyCreateRequest().role == "RUNTIME"
+    assert ProjectApiKeyCreateRequest(role="REVIEWER").role == (
+        "REVIEWER"
+    )
+
+
+def test_api_key_create_request_rejects_unknown_role():
+    with pytest.raises(ValidationError):
+        ProjectApiKeyCreateRequest(role="ADMIN")

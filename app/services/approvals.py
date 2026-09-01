@@ -33,6 +33,7 @@ from app.idempotency import build_request_fingerprint
 def resolve_approval_request(
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
+    resolver_id: str,
     status: ApprovalResolutionStatus,
     project_id: UUID,
     store: EvidenceStore,
@@ -42,11 +43,11 @@ def resolve_approval_request(
             decision_id=decision_id,
             project_id=project_id,
             status=status,
-            resolved_by=resolution.resolved_by,
+            resolved_by=resolver_id,
             resolved_at=datetime.now(timezone.utc),
             audit_context=AuditContext(
                 actor_type="PROJECT",
-                actor_id=resolution.resolved_by,
+                actor_id=resolver_id,
                 reason=resolution.reason,
             ),
         )
@@ -81,6 +82,7 @@ def approve_approval_request(
     *,
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
+    resolver_id: str,
     project_id: UUID,
     store: EvidenceStore,
     execution_grant_secret: str,
@@ -209,12 +211,12 @@ def approve_approval_request(
             store.approve_approval_with_grant(
                 decision_id=decision_id,
                 project_id=project_id,
-                resolved_by=resolution.resolved_by,
+                resolved_by=resolver_id,
                 resolved_at=effective_time,
                 grant=grant,
                 audit_context=AuditContext(
                     actor_type="PROJECT",
-                    actor_id=resolution.resolved_by,
+                    actor_id=resolver_id,
                     reason=resolution.reason,
                 ),
             )

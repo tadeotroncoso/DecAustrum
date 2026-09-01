@@ -210,7 +210,6 @@ class DecAustrumClient:
         self,
         decision_id: UUID | str,
         *,
-        resolved_by: str,
         reason: str | None = None,
     ) -> ApprovalGrant:
         normalized_id = normalize_uuid(decision_id, "decision_id")
@@ -218,10 +217,6 @@ class DecAustrumClient:
             "POST",
             f"/v1/approvals/{normalized_id}/approve",
             json_body={
-                "resolved_by": normalize_identifier(
-                    resolved_by,
-                    "resolved_by",
-                ),
                 "reason": normalize_optional_reason(reason),
             },
         )
@@ -231,7 +226,6 @@ class DecAustrumClient:
         self,
         decision_id: UUID | str,
         *,
-        resolved_by: str,
         reason: str | None = None,
     ) -> ApprovalRecord:
         normalized_id = normalize_uuid(decision_id, "decision_id")
@@ -239,10 +233,6 @@ class DecAustrumClient:
             "POST",
             f"/v1/approvals/{normalized_id}/reject",
             json_body={
-                "resolved_by": normalize_identifier(
-                    resolved_by,
-                    "resolved_by",
-                ),
                 "reason": normalize_optional_reason(reason),
             },
         )
@@ -300,6 +290,7 @@ class DecAustrumClient:
                 ),
                 json=json_body,
                 params=params,
+                follow_redirects=False,
             )
         except httpx.TimeoutException as exc:
             raise DecAustrumTransportError(

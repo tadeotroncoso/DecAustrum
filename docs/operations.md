@@ -70,7 +70,9 @@ An authorization response with `REQUIRE_APPROVAL` creates a pending request
 whose `expires_at` is controlled by `DECAUSTRUM_APPROVAL_TTL_SECONDS`.
 
 1. Review and approve with
-   `POST /v1/approvals/{decision_id}/approve`.
+   `POST /v1/approvals/{decision_id}/approve` using a separate project key with
+   the `REVIEWER` role. The `RUNTIME` key that requested authorization is not
+   permitted to resolve it.
 2. Protect the returned `execution_grant` as a short-lived bearer credential.
    Do not log it, place it in URLs, persist it in analytics, or send it through
    webhook payloads.
@@ -109,6 +111,10 @@ python -m pip install -e .\sdk\python
 Configure the application runtime with a project-scoped `DECAUSTRUM_API_KEY` and
 `DECAUSTRUM_BASE_URL`. Never give an SDK runtime the administrator API key,
 webhook master secret, or server-side execution-grant signing secret.
+Remote base URLs must use HTTPS; the SDK permits plaintext HTTP only for
+loopback development and disables redirects on credential-bearing requests.
+Configure the review workflow with a distinct `REVIEWER` key. Do not put that
+key in the execution runtime.
 
 Use a stable business idempotency key for authorization calls. Do not configure
 generic HTTP middleware to retry `POST /v1/execution-grants/consume`: a timeout
@@ -123,12 +129,23 @@ Before releasing an integration:
 2. Assert the business callback is untouched for denied and pending requests.
 3. Test that changed agent, action, or context cannot use an issued grant.
 4. Test replay and expiry without retrying the side effect.
-5. Give reviewers and execution runtimes separate operational identities even
-   if the local MVP currently authenticates both with one project key.
-6. Run the example only against a local or non-production project because its
-   reviewer is intentionally inline for demonstration.
+5. Verify that a `RUNTIME` key cannot approve or reject and a `REVIEWER` key
+   cannot authorize or consume a grant.
+6. Run the example only against a local or non-production project and supply
+   separate runtime and reviewer keys.
 
 The full usage and error contract is documented in `docs/sdk-python.md`.
+
+## Evidence export limits
+
+Evidence generation has hard application limits in addition to the HTTP body
+limit. A standard export accepts at most 2,000 records and 32 MiB of canonical
+record data. A ZIP bundle accepts a chain of at most 10,000 records and 32 MiB,
+with a 64 MiB generated-archive limit. The API returns `413` when any boundary
+would be crossed; narrow the time range or other filters rather than retrying
+the same unbounded query. CSV exports neutralize spreadsheet formula prefixes,
+but operators should still import untrusted evidence into isolated analysis
+tools.
 
 ## Health and metrics
 
@@ -201,6 +218,8 @@ the repository layer.
 DecAustrum has one declared Python minor version and two dependency sets:
 
 - `.python-version` pins the developer and CI interpreter;
+- `requirements/bootstrap.lock` pins the pip wheel and verifies its SHA-256
+  hash before upgrading the environment installer;
 - `requirements/runtime.lock` is the exact API and worker dependency graph,
   including SHA-256 hashes for every accepted distribution artifact;
 - `requirements/dev.lock` contains that graph plus the exact test, packaging,
@@ -215,6 +234,12 @@ dependency consistency, and in development mode install the backend and SDK
 as editable packages. They never
 copy `.env.example` automatically because accepting placeholder credentials as
 runtime secrets would be unsafe.
+
+When Windows has multiple Python installations, pass the exact interpreter to
+`scripts/bootstrap.ps1 -Python C:\path\to\python.exe` or set
+`DECAUSTRUM_PYTHON`. POSIX accepts the same environment variable. An existing
+virtual environment with a different Python minor is rejected rather than
+silently reused.
 
 Before proposing a release, run `scripts/check.ps1` or `scripts/check.sh`. The
 release gate audits the hashed dependency graph, rejects new Bandit findings,

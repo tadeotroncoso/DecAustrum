@@ -55,6 +55,36 @@ def test_policy_accepts_multiple_conditions():
     assert len(policy.conditions) == 2
 
 
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        {"nested": [float("nan")]},
+    ],
+)
+def test_policy_rejects_non_finite_condition_values(invalid_value):
+    with pytest.raises(ValidationError, match="finite JSON"):
+        Policy.model_validate(
+            {
+                "id": "non-finite-policy",
+                "version": 1,
+                "action": "test-action",
+                "match": "all",
+                "conditions": [
+                    {
+                        "field": "amount",
+                        "operator": "greater_than",
+                        "value": invalid_value,
+                    }
+                ],
+                "decision": "DENY",
+                "reason": "Invalid non-finite policy.",
+            }
+        )
+
+
 def build_historical_policy() -> dict:
     return {
         "id": "refund-limit",

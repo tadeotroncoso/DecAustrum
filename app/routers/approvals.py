@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api_keys import ProjectApiKeyPrincipal
 from app.approval_models import (
     ApprovalGrantResponse,
     ApprovalRecord,
@@ -13,6 +14,7 @@ from app.dependencies import (
     get_authenticated_project,
     get_evidence_store,
     get_execution_grant_secret,
+    get_reviewer_principal,
     get_runtime_settings,
 )
 from app.evidence_store import EvidenceStore
@@ -93,8 +95,8 @@ def get_approval_request(
 def approve_request(
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
-    project: Project = Depends(
-        get_authenticated_project
+    principal: ProjectApiKeyPrincipal = Depends(
+        get_reviewer_principal
     ),
     store: EvidenceStore = Depends(get_evidence_store),
     execution_grant_secret: str = Depends(
@@ -105,7 +107,8 @@ def approve_request(
     return approve_approval_request(
         decision_id=decision_id,
         resolution=resolution,
-        project_id=project.project_id,
+        resolver_id=f"reviewer-key:{principal.api_key_id}",
+        project_id=principal.project.project_id,
         store=store,
         execution_grant_secret=execution_grant_secret,
         execution_grant_ttl_seconds=(
@@ -121,15 +124,16 @@ def approve_request(
 def reject_request(
     decision_id: UUID,
     resolution: ApprovalResolutionRequest,
-    project: Project = Depends(
-        get_authenticated_project
+    principal: ProjectApiKeyPrincipal = Depends(
+        get_reviewer_principal
     ),
     store: EvidenceStore = Depends(get_evidence_store),
 ) -> ApprovalRecord:
     return resolve_approval_request(
         decision_id=decision_id,
         resolution=resolution,
+        resolver_id=f"reviewer-key:{principal.api_key_id}",
         status="REJECTED",
-        project_id=project.project_id,
+        project_id=principal.project.project_id,
         store=store,
     )

@@ -15,10 +15,14 @@ from app.evidence_models import (
     EvidenceExportSnapshot,
 )
 from app.evidence_store import EvidenceStore
+from app.exceptions import EvidenceExportSizeLimitError
 from app.integrity_models import VerifiableDecisionRecord
 
-MAX_EVIDENCE_EXPORT_RECORDS = 10_000
-MAX_EVIDENCE_BUNDLE_CHAIN_RECORDS = 100_000
+MAX_EVIDENCE_EXPORT_RECORDS = 2_000
+MAX_EVIDENCE_EXPORT_BYTES = 32 * 1024 * 1024
+MAX_EVIDENCE_BUNDLE_CHAIN_RECORDS = 10_000
+MAX_EVIDENCE_BUNDLE_CHAIN_BYTES = 32 * 1024 * 1024
+MAX_EVIDENCE_BUNDLE_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,31 @@ def _integrity_conflict(
     )
 
 
+def _size_limit_response(
+    error: EvidenceExportSizeLimitError,
+) -> HTTPException:
+    code = {
+        "bundle": "evidence_bundle_too_large",
+        "chain": "evidence_chain_too_large",
+        "records": "evidence_export_too_large",
+    }.get(error.scope, "evidence_export_too_large")
+    message = {
+        "bundle": "The generated evidence bundle exceeds its byte limit.",
+        "chain": (
+            "The integrity chain exceeds the generated evidence byte limit."
+        ),
+        "records": "The selected evidence exceeds the export byte limit.",
+    }.get(error.scope, "The generated evidence exceeds its byte limit.")
+    return HTTPException(
+        status_code=413,
+        detail={
+            "code": code,
+            "message": message,
+            "maximum_bytes": error.maximum_bytes,
+        },
+    )
+
+
 def prepare_evidence_export(
     *,
     project_id: UUID,
@@ -52,30 +81,15 @@ def prepare_evidence_export(
     expected_head_hash: str | None = None,
     include_chain: bool = False,
 ) -> PreparedEvidenceExport:
-    snapshot, records = store.capture_evidence_export_records(
-        project_id=project_id,
-        filters=filters,
-        maximum_records=MAX_EVIDENCE_EXPORT_RECORDS,
-    )
-    snapshot_verification = store.verify_decision_integrity(
-        project_id=project_id,
-        expected_head_hash=snapshot.chain_head_hash,
-    )
-
-    if not snapshot_verification.verified:
-        raise _integrity_conflict(snapshot_verification)
-
-    if (
-        expected_head_hash is not None
-        and expected_head_hash != snapshot.chain_head_hash
-    ):
-        checkpoint_verification = store.verify_decision_integrity(
+    try:
+        snapshot, records = store.capture_evidence_export_records(
             project_id=project_id,
-            expected_head_hash=expected_head_hash,
+            filters=filters,
+            maximum_records=MAX_EVIDENCE_EXPORT_RECORDS,
+            maximum_bytes=MAX_EVIDENCE_EXPORT_BYTES,
         )
-
-        if not checkpoint_verification.verified:
-            raise _integrity_conflict(checkpoint_verification)
+    except EvidenceExportSizeLimitError as exc:
+        raise _size_limit_response(exc) from exc
 
     if snapshot.record_count > MAX_EVIDENCE_EXPORT_RECORDS:
         raise HTTPException(
@@ -108,6 +122,26 @@ def prepare_evidence_export(
             },
         )
 
+    snapshot_verification = store.verify_decision_integrity(
+        project_id=project_id,
+        expected_head_hash=snapshot.chain_head_hash,
+    )
+
+    if not snapshot_verification.verified:
+        raise _integrity_conflict(snapshot_verification)
+
+    if (
+        expected_head_hash is not None
+        and expected_head_hash != snapshot.chain_head_hash
+    ):
+        checkpoint_verification = store.verify_decision_integrity(
+            project_id=project_id,
+            expected_head_hash=expected_head_hash,
+        )
+
+        if not checkpoint_verification.verified:
+            raise _integrity_conflict(checkpoint_verification)
+
     return PreparedEvidenceExport(
         filters=filters,
         snapshot=snapshot,
@@ -123,10 +157,14 @@ def create_evidence_bundle(
 ) -> EvidenceBundle:
     snapshot = prepared.snapshot
     records = list(prepared.records)
-    chain = store.list_evidence_chain(
-        project_id=snapshot.project_id,
-        max_sequence_number=snapshot.max_sequence_number,
-    )
+    try:
+        chain = store.list_evidence_chain(
+            project_id=snapshot.project_id,
+            max_sequence_number=snapshot.max_sequence_number,
+            maximum_bytes=MAX_EVIDENCE_BUNDLE_CHAIN_BYTES,
+        )
+    except EvidenceExportSizeLimitError as exc:
+        raise _size_limit_response(exc) from exc
     bundle = build_evidence_bundle(
         snapshot=snapshot,
         criteria=prepared.filters,
@@ -161,7 +199,15 @@ def create_evidence_bundle_archive(
         expected_head_hash=expected_head_hash,
     )
 
-    return bundle, build_evidence_bundle_archive(bundle)
+    try:
+        archive = build_evidence_bundle_archive(
+            bundle,
+            maximum_bytes=MAX_EVIDENCE_BUNDLE_BYTES,
+        )
+    except EvidenceExportSizeLimitError as exc:
+        raise _size_limit_response(exc) from exc
+
+    return bundle, archive
 
 
 def evidence_response_headers(
@@ -184,6 +230,9 @@ def evidence_response_headers(
 
 __all__ = [
     "MAX_EVIDENCE_BUNDLE_CHAIN_RECORDS",
+    "MAX_EVIDENCE_BUNDLE_BYTES",
+    "MAX_EVIDENCE_BUNDLE_CHAIN_BYTES",
+    "MAX_EVIDENCE_EXPORT_BYTES",
     "MAX_EVIDENCE_EXPORT_RECORDS",
     "PreparedEvidenceExport",
     "create_evidence_bundle",

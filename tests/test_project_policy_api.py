@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -208,6 +209,24 @@ def test_policy_update_is_isolated_between_projects():
 
     assert first_policy.json()["version"] == 2
     assert second_policy.json()["version"] == 1
+
+
+def test_policy_api_rejects_non_finite_condition_value():
+    provisioned = provision_project("Finite Policy Values")
+    project_id = provisioned["project"]["project_id"]
+    policy = build_refund_policy(version=2, amount=100)
+    policy["conditions"][0]["value"] = float("nan")
+
+    response = test_client.put(
+        f"/v1/admin/projects/{project_id}/policies/refund-limit",
+        headers={
+            **admin_headers(),
+            "Content-Type": "application/json",
+        },
+        content=json.dumps(policy),
+    )
+
+    assert response.status_code == 422
 
 
 def test_disabling_policy_is_isolated_and_idempotent():

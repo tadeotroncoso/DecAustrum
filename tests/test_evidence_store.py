@@ -1158,6 +1158,7 @@ def test_initialize_creates_project_api_keys_table(
         "project_id",
         "key_prefix",
         "key_hash",
+        "role",
         "created_at",
         "revoked_at",
     }
@@ -1166,6 +1167,68 @@ def test_initialize_creates_project_api_keys_table(
     assert foreign_keys[0][2] == "projects"
     assert foreign_keys[0][3] == "project_id"
     assert foreign_keys[0][4] == "project_id"
+
+
+def test_initialize_migrates_legacy_project_api_keys_table(
+    tmp_path,
+):
+    database_path = tmp_path / "legacy-api-keys.db"
+    store = EvidenceStore(database_path)
+    store.initialize()
+    project = build_project()
+    api_key = build_project_api_key(project.project_id)
+    store.save_project(project)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DROP TABLE project_api_keys")
+        connection.execute(
+            """
+            CREATE TABLE project_api_keys (
+                api_key_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                key_prefix TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                revoked_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO project_api_keys (
+                api_key_id,
+                project_id,
+                key_prefix,
+                key_hash,
+                created_at,
+                revoked_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(api_key.api_key_id),
+                str(api_key.project_id),
+                api_key.key_prefix,
+                api_key.key_hash,
+                api_key.created_at.isoformat(),
+                None,
+            ),
+        )
+
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT role
+            FROM project_api_keys
+            WHERE api_key_id = ?
+            """,
+            (str(api_key.api_key_id),),
+        ).fetchone()
+
+    assert row is not None
+    assert row["role"] == "RUNTIME"
 
 
 def test_save_project_api_key_persists_hash(
@@ -1199,6 +1262,7 @@ def test_save_project_api_key_persists_hash(
     assert row["project_id"] == str(project.project_id)
     assert row["key_prefix"] == api_key.key_prefix
     assert row["key_hash"] == api_key.key_hash
+    assert row["role"] == "RUNTIME"
     assert row["revoked_at"] is None
 
 
@@ -1368,6 +1432,28 @@ def test_api_key_hash_returns_active_project(
     )
 
     assert loaded_project == project
+
+
+def test_api_key_hash_returns_authenticated_role_principal(
+    tmp_path,
+):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+    project = build_project()
+    api_key = build_project_api_key(
+        project.project_id
+    ).model_copy(update={"role": "REVIEWER"})
+    store.save_project(project)
+    store.save_project_api_key(api_key)
+
+    principal = store.get_active_api_key_principal_by_hash(
+        api_key.key_hash
+    )
+
+    assert principal is not None
+    assert principal.api_key_id == api_key.api_key_id
+    assert principal.role == "REVIEWER"
+    assert principal.project == project
 
 
 def test_revoked_api_key_does_not_return_project(

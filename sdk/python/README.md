@@ -36,6 +36,11 @@ has authorized it. See the [SDK integration guide](../../docs/sdk-python.md) and
 [protected bank transfer example](examples/protected_bank_transfer.py) for the
 complete approval and one-time execution-grant flow.
 
+Remote base URLs must use HTTPS; plaintext HTTP is accepted only for local
+loopback development. Approval and rejection require a separate project API key
+with the `REVIEWER` role. Runtime keys authorize and consume grants but cannot
+approve their own requests.
+
 ## License and support
 
 The DecAustrum SDK is source-available under the

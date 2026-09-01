@@ -7,9 +7,9 @@ from app.authorization_models import (
     AuthorizationResponse,
 )
 from app.dependencies import (
-    get_authenticated_project,
     get_evidence_store,
     get_metrics_registry,
+    get_runtime_project,
     get_runtime_settings,
 )
 from app.evidence_store import EvidenceStore
@@ -36,7 +36,7 @@ def authorize(
         ),
     ] = None,
     project: Project = Depends(
-        get_authenticated_project
+        get_runtime_project
     ),
     store: EvidenceStore = Depends(get_evidence_store),
     metrics: MetricsRegistry = Depends(get_metrics_registry),

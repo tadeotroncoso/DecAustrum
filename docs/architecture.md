@@ -34,8 +34,9 @@ and consuming its execution grant.
 ### Dependency wiring
 
 `app/dependencies.py` owns the configured `EvidenceStore` instance and the
-FastAPI dependencies for tenant and administrator authentication. Tests replace
-the store through FastAPI's dependency override mechanism.
+FastAPI dependencies for role-aware project and administrator authentication.
+Project keys carry either a `RUNTIME` or `REVIEWER` role. Tests replace the
+store through FastAPI's dependency override mechanism.
 
 ### Domain logic and models
 
@@ -70,7 +71,7 @@ several repositories.
 
 ## Main authorization flow
 
-1. The authorization router authenticates the project.
+1. The authorization router authenticates a `RUNTIME` project key.
 2. The authorization service checks project-scoped idempotency.
 3. Active policies are loaded for that project only.
 4. The policy engine returns a structured evaluation and complete trace.
@@ -90,6 +91,12 @@ PENDING -> APPROVED + ACTIVE grant
                        |-> CONSUMED
                        `-> EXPIRED
 ```
+
+Approval and rejection require a separate `REVIEWER` key. The runtime key that
+created a request is structurally unable to resolve it, while reviewer keys
+cannot authorize or consume execution grants. The API derives `resolved_by`
+from the authenticated reviewer key ID and rejects any client-supplied resolver
+identity.
 
 New approval requests receive a UTC `expires_at`. A lazy transactional sweep
 runs before approval reads, searches, exports, and resolution; due requests
@@ -184,7 +191,8 @@ Administrative API clients can identify the operator with `X-Admin-Actor` and
 provide a ticket or explanation with `X-Audit-Reason`. Existing clients remain
 compatible: when the actor header is absent, DecAustrum records
 `admin-api-key`. Approval resolution uses the authenticated project as the
-actor type and the request's `resolved_by` and optional `reason` values.
+actor type, derives the actor identifier from the `REVIEWER` key ID, and accepts
+only an optional reason from the request.
 
 Only effective state changes create events. Repeating an already completed
 status change, key revocation, or policy disable is operationally idempotent
@@ -433,8 +441,11 @@ selected decision includes its integrity proof; CSV keeps nested context,
 evidence, and trace values as canonical JSON columns. Response headers expose
 the project, snapshot time, selected record count, maximum sequence, and chain
 head. JSON also contains the criteria and snapshot in its envelope. Exports are
-bounded to 10,000 selected records so an accidental unfiltered request cannot
-consume unbounded memory or response time.
+bounded to 2,000 selected records and 32 MiB of canonical record data so an
+accidental unfiltered request cannot consume unbounded memory. CSV cells whose
+first effective character is `=`, `+`, `-`, or `@` are prefixed with an
+apostrophe, including leading-whitespace and control-character variants, so a
+spreadsheet does not execute tenant text as a formula.
 
 An export captures the chain head and selected records in one SQLite read
 transaction. Later decisions receive higher sequence numbers and cannot enter
@@ -464,7 +475,9 @@ metadata is deterministic, while verification hashes canonical logical data so
 irrelevant whitespace or ZIP compression differences do not alter the result.
 DecAustrum verifies every generated bundle before returning it and refuses export
 with HTTP 409 if the live project ledger fails integrity verification. Bundle
-chains are also bounded to 100,000 records for this local MVP.
+chains are bounded to 10,000 records and 32 MiB; generated archive content is
+bounded to 64 MiB. Database cursors are consumed incrementally and every limit
+is checked before an additional record is retained.
 
 The verifier does not require the API or database:
 
@@ -491,6 +504,11 @@ boundary. Synchronous and asynchronous clients validate local inputs, send the
 project API key and correlation ID, parse UUIDs and timezone-aware timestamps,
 and reject malformed success responses instead of passing untyped dictionaries
 into application code.
+
+Remote SDK base URLs must use HTTPS. Plaintext HTTP is allowed only for loopback
+development, and each request explicitly disables redirects even when a caller
+injects an HTTPX client configured to follow them. Context validation rejects
+non-finite numbers before a request is sent.
 
 The SDK runtime surface covers authorization, decision lookup, approval
 listing and resolution, and one-time execution-grant consumption. It does not

@@ -2,8 +2,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.json_values import validate_json_value
 from app.policy_types import (
     ConditionMatch,
     Decision,
@@ -15,6 +16,11 @@ class PolicyCondition(BaseModel):
     field: str
     operator: Operator
     value: Any
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def require_strict_json_value(cls, value: Any) -> Any:
+        return validate_json_value(value, name="condition value")
 
 
 class Policy(BaseModel):

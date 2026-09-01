@@ -1,12 +1,15 @@
 import hashlib
 import secrets
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
+
+from app.project_models import Project
 
 API_KEY_MARKER = "dak_"
+ProjectApiKeyRole = Literal["RUNTIME", "REVIEWER"]
 
 ApiKeyHash = Annotated[
     str,
@@ -29,6 +32,7 @@ class ProjectApiKeyRecord(BaseModel):
     project_id: UUID
     key_prefix: ApiKeyPrefix
     key_hash: ApiKeyHash
+    role: ProjectApiKeyRole = "RUNTIME"
     created_at: datetime
     revoked_at: datetime | None = None
 
@@ -37,6 +41,7 @@ class ProjectApiKeyMetadata(BaseModel):
     api_key_id: UUID
     project_id: UUID
     key_prefix: ApiKeyPrefix
+    role: ProjectApiKeyRole = "RUNTIME"
     created_at: datetime
     revoked_at: datetime | None = None
 
@@ -46,6 +51,18 @@ class ProjectApiKeyPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ProjectApiKeyCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: ProjectApiKeyRole = "RUNTIME"
+
+
+class ProjectApiKeyPrincipal(BaseModel):
+    api_key_id: UUID
+    role: ProjectApiKeyRole
+    project: Project
 
 
 class ProjectApiKeyProvisioningResponse(BaseModel):

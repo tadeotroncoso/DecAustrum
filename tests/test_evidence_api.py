@@ -337,3 +337,71 @@ def test_export_applies_a_bounded_record_limit(monkeypatch):
     assert response.json()["detail"]["code"] == (
         "evidence_export_too_large"
     )
+
+
+def test_export_applies_a_bounded_serialized_size(monkeypatch):
+    authorize()
+    monkeypatch.setattr(
+        evidence_service,
+        "MAX_EVIDENCE_EXPORT_BYTES",
+        1,
+    )
+
+    response = client.get(
+        "/v1/evidence/export",
+        headers=project_headers(),
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == {
+        "code": "evidence_export_too_large",
+        "message": "The selected evidence exceeds the export byte limit.",
+        "maximum_bytes": 1,
+    }
+
+
+def test_bundle_applies_a_bounded_chain_size(monkeypatch):
+    authorize()
+    monkeypatch.setattr(
+        evidence_service,
+        "MAX_EVIDENCE_BUNDLE_CHAIN_BYTES",
+        1,
+    )
+
+    response = client.get(
+        "/v1/evidence/bundle",
+        headers=project_headers(),
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == {
+        "code": "evidence_chain_too_large",
+        "message": (
+            "The integrity chain exceeds the generated evidence byte "
+            "limit."
+        ),
+        "maximum_bytes": 1,
+    }
+
+
+def test_bundle_applies_a_bounded_archive_size(monkeypatch):
+    authorize()
+    monkeypatch.setattr(
+        evidence_service,
+        "MAX_EVIDENCE_BUNDLE_BYTES",
+        1,
+    )
+
+    response = client.get(
+        "/v1/evidence/bundle",
+        headers=project_headers(),
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == {
+        "code": "evidence_bundle_too_large",
+        "message": (
+            "The generated evidence bundle exceeds its byte limit."
+        ),
+        "maximum_bytes": 1,
+    }

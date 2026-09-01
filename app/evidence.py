@@ -18,6 +18,7 @@ from app.evidence_models import (
     EvidenceBundleVerificationFailure,
     EvidenceExportSnapshot,
 )
+from app.exceptions import EvidenceExportSizeLimitError
 from app.integrity import (
     calculate_authorization_payload_hash,
     calculate_integrity_proof_record_hash,
@@ -34,7 +35,7 @@ EVIDENCE_BUNDLE_FILES = {
     "records.ndjson",
     "chain.ndjson",
 }
-MAX_EVIDENCE_ARCHIVE_BYTES = 200 * 1024 * 1024
+MAX_EVIDENCE_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 CSV_COLUMNS = (
     "decision_id",
@@ -57,6 +58,7 @@ CSV_COLUMNS = (
     "integrity_schema_version",
     "integrity_created_at",
 )
+CSV_FORMULA_PREFIXES = frozenset("=+-@\t\r\n")
 
 
 class EvidenceBundleArchiveError(ValueError):
@@ -544,7 +546,7 @@ def _csv_row(
     decision = record.decision.model_dump(mode="json")
     proof = record.integrity.model_dump(mode="json")
 
-    return {
+    row = {
         "decision_id": decision["decision_id"],
         "project_id": decision["project_id"],
         "evaluated_at": decision["evaluated_at"],
@@ -570,6 +572,29 @@ def _csv_row(
         "integrity_created_at": proof["created_at"],
     }
 
+    return {
+        column: _spreadsheet_safe_csv_value(value)
+        for column, value in row.items()
+    }
+
+
+def _spreadsheet_safe_csv_value(value: Any) -> Any:
+    if not isinstance(value, str) or not value:
+        return value
+
+    stripped = value.lstrip()
+    if (
+        value[0] in CSV_FORMULA_PREFIXES
+        or value[0].isspace()
+        or (
+            stripped
+            and stripped[0] in CSV_FORMULA_PREFIXES
+        )
+    ):
+        return "'" + value
+
+    return value
+
 
 def iter_csv_export(
     records: Iterable[VerifiableDecisionRecord],
@@ -590,52 +615,87 @@ def iter_csv_export(
         yield buffer.getvalue().encode("utf-8")
 
 
-def _write_deterministic_zip_member(
+def _write_deterministic_zip_lines(
     archive: zipfile.ZipFile,
     name: str,
-    content: str,
-) -> None:
+    lines: Iterable[str],
+    *,
+    written_bytes: int,
+    maximum_bytes: int,
+) -> int:
     info = zipfile.ZipInfo(
         filename=name,
         date_time=(1980, 1, 1, 0, 0, 0),
     )
     info.compress_type = zipfile.ZIP_DEFLATED
     info.external_attr = 0o600 << 16
-    archive.writestr(info, content.encode("utf-8"))
+    with archive.open(info, mode="w") as member:
+        for line in lines:
+            encoded = line.encode("utf-8")
+            written_bytes += len(encoded)
+
+            if written_bytes > maximum_bytes:
+                raise EvidenceExportSizeLimitError(
+                    "bundle",
+                    maximum_bytes,
+                )
+
+            member.write(encoded)
+
+    return written_bytes
 
 
 def build_evidence_bundle_archive(
     bundle: EvidenceBundle,
+    *,
+    maximum_bytes: int = MAX_EVIDENCE_ARCHIVE_BYTES,
 ) -> bytes:
     output = io.BytesIO()
+    written_bytes = 0
 
     with zipfile.ZipFile(output, mode="w") as archive:
-        _write_deterministic_zip_member(
+        written_bytes = _write_deterministic_zip_lines(
             archive,
             "manifest.json",
-            canonical_json(bundle.manifest.model_dump(mode="json"))
-            + "\n",
+            (
+                canonical_json(
+                    bundle.manifest.model_dump(mode="json")
+                ) + "\n",
+            ),
+            written_bytes=written_bytes,
+            maximum_bytes=maximum_bytes,
         )
-        _write_deterministic_zip_member(
+        written_bytes = _write_deterministic_zip_lines(
             archive,
             "records.ndjson",
-            "".join(
+            (
                 canonical_json(record.model_dump(mode="json"))
                 + "\n"
                 for record in bundle.records
             ),
+            written_bytes=written_bytes,
+            maximum_bytes=maximum_bytes,
         )
-        _write_deterministic_zip_member(
+        _write_deterministic_zip_lines(
             archive,
             "chain.ndjson",
-            "".join(
+            (
                 canonical_json(proof.model_dump(mode="json"))
                 + "\n"
                 for proof in bundle.chain
             ),
+            written_bytes=written_bytes,
+            maximum_bytes=maximum_bytes,
         )
 
-    return output.getvalue()
+    archive_bytes = output.getvalue()
+    if len(archive_bytes) > maximum_bytes:
+        raise EvidenceExportSizeLimitError(
+            "bundle",
+            maximum_bytes,
+        )
+
+    return archive_bytes
 
 
 def _read_archive_bytes(source: bytes | Path | str) -> bytes:

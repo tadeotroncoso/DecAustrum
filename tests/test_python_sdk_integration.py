@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from uuid import UUID
 
 import httpx
 import pytest
@@ -15,6 +16,11 @@ from decaustrum import (
 )
 from fastapi.testclient import TestClient
 
+from app.api_keys import (
+    ProjectApiKeyRecord,
+    get_api_key_prefix,
+    hash_api_key,
+)
 from app.bootstrap import bootstrap_default_project
 from app.evidence_store import EvidenceStore
 from app.main import app, get_evidence_store
@@ -23,6 +29,10 @@ from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
 TEST_API_KEY = "python-sdk-project-key"
+TEST_REVIEWER_API_KEY = "python-sdk-reviewer-key"
+TEST_REVIEWER_API_KEY_ID = UUID(
+    "ff990241-4ab0-46ce-bd6b-655c5fcd5df8"
+)
 TEST_ADMIN_API_KEY = "python-sdk-admin-key"
 TEST_EXECUTION_SECRET = (
     "python-sdk-execution-secret-at-least-32-bytes"
@@ -47,6 +57,16 @@ def sdk_environment(tmp_path, monkeypatch):
     store = EvidenceStore(tmp_path / "sdk-integration.db")
     store.initialize()
     bootstrap_default_project(store=store, api_key=TEST_API_KEY)
+    store.save_project_api_key(
+        ProjectApiKeyRecord(
+            api_key_id=TEST_REVIEWER_API_KEY_ID,
+            project_id=DEFAULT_PROJECT_ID,
+            key_prefix=get_api_key_prefix(TEST_REVIEWER_API_KEY),
+            key_hash=hash_api_key(TEST_REVIEWER_API_KEY),
+            role="REVIEWER",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
     store.seed_project_policies(
         project_id=DEFAULT_PROJECT_ID,
         policies=load_policies(POLICIES_DIRECTORY),
@@ -56,18 +76,23 @@ def sdk_environment(tmp_path, monkeypatch):
     http_client = TestClient(app)
     sdk = DecAustrumClient(
         api_key=TEST_API_KEY,
-        base_url="http://testserver",
+        base_url="http://localhost",
+        http_client=http_client,
+    )
+    reviewer_sdk = DecAustrumClient(
+        api_key=TEST_REVIEWER_API_KEY,
+        base_url="http://localhost",
         http_client=http_client,
     )
 
-    yield sdk, store
+    yield sdk, reviewer_sdk, store
 
     http_client.close()
     app.dependency_overrides.clear()
 
 
 def test_sdk_runs_allow_operation_against_real_api(sdk_environment):
-    sdk, _ = sdk_environment
+    sdk, _, _ = sdk_environment
     guard = DecAustrumGuard(sdk)
     calls = 0
 
@@ -92,7 +117,7 @@ def test_sdk_runs_allow_operation_against_real_api(sdk_environment):
 
 
 def test_sdk_blocks_denied_operation_against_real_api(sdk_environment):
-    sdk, _ = sdk_environment
+    sdk, _, _ = sdk_environment
     guard = DecAustrumGuard(sdk)
     calls = 0
 
@@ -116,7 +141,7 @@ def test_sdk_blocks_denied_operation_against_real_api(sdk_environment):
 
 
 def test_sdk_closes_real_approval_and_execution_flow(sdk_environment):
-    sdk, _ = sdk_environment
+    sdk, reviewer_sdk, _ = sdk_environment
     guard = DecAustrumGuard(sdk)
     calls = 0
 
@@ -145,13 +170,12 @@ def test_sdk_closes_real_approval_and_execution_flow(sdk_environment):
     assert page.total == 1
     assert page.items == (pending,)
 
-    grant = sdk.approve(
+    grant = reviewer_sdk.approve(
         decision.decision_id,
-        resolved_by="security-reviewer",
         reason="Transfer evidence reviewed.",
     )
     assert grant.status == "APPROVED"
-    assert grant.execution_grant.startswith("rgt_exec_v1.")
+    assert grant.execution_grant.startswith("dag_exec_v1.")
     assert grant.grant_expires_at > grant.resolved_at
 
     result = guard.execute_approved(
@@ -186,16 +210,13 @@ def test_sdk_closes_real_approval_and_execution_flow(sdk_environment):
 def test_sdk_changed_context_cannot_run_and_does_not_consume_grant(
     sdk_environment,
 ):
-    sdk, _ = sdk_environment
+    sdk, reviewer_sdk, _ = sdk_environment
     decision = sdk.authorize(
         agent="finance-agent",
         action="bank_transfer",
         context=TRANSFER_CONTEXT,
     )
-    grant = sdk.approve(
-        decision.decision_id,
-        resolved_by="security-reviewer",
-    )
+    grant = reviewer_sdk.approve(decision.decision_id)
     guard = DecAustrumGuard(sdk)
     calls = 0
 
@@ -233,16 +254,15 @@ def test_sdk_changed_context_cannot_run_and_does_not_consume_grant(
 
 
 def test_sdk_rejection_is_terminal_and_polling_returns_it(sdk_environment):
-    sdk, _ = sdk_environment
+    sdk, reviewer_sdk, _ = sdk_environment
     decision = sdk.authorize(
         agent="finance-agent",
         action="bank_transfer",
         context=TRANSFER_CONTEXT,
     )
 
-    rejected = sdk.reject(
+    rejected = reviewer_sdk.reject(
         decision.decision_id,
-        resolved_by="security-reviewer",
         reason="Transfer not justified.",
     )
     polled = sdk.wait_for_approval(
@@ -256,7 +276,7 @@ def test_sdk_rejection_is_terminal_and_polling_returns_it(sdk_environment):
 
 
 def test_sdk_authorization_idempotency_uses_real_backend(sdk_environment):
-    sdk, _ = sdk_environment
+    sdk, _, _ = sdk_environment
     first = sdk.authorize(
         agent="support-agent",
         action="refund_payment",
@@ -274,11 +294,11 @@ def test_sdk_authorization_idempotency_uses_real_backend(sdk_environment):
 
 
 def test_sdk_exposes_authentication_error_and_request_id(sdk_environment):
-    _, _ = sdk_environment
+    _, _, _ = sdk_environment
     http_client = TestClient(app)
     invalid_sdk = DecAustrumClient(
         api_key="invalid-project-key",
-        base_url="http://testserver",
+        base_url="http://localhost",
         http_client=http_client,
     )
     try:
@@ -298,7 +318,7 @@ def test_sdk_exposes_authentication_error_and_request_id(sdk_environment):
 def test_async_sdk_and_guard_integrate_with_real_asgi_api(
     sdk_environment,
 ):
-    _, _ = sdk_environment
+    _, _, _ = sdk_environment
 
     async def run_test():
         transport = httpx.ASGITransport(app=app)
@@ -307,7 +327,12 @@ def test_async_sdk_and_guard_integrate_with_real_asgi_api(
         ) as http_client:
             client = AsyncDecAustrumClient(
                 api_key=TEST_API_KEY,
-                base_url="http://testserver",
+                base_url="http://localhost",
+                http_client=http_client,
+            )
+            reviewer_client = AsyncDecAustrumClient(
+                api_key=TEST_REVIEWER_API_KEY,
+                base_url="http://localhost",
                 http_client=http_client,
             )
             guard = AsyncDecAustrumGuard(client)
@@ -328,9 +353,8 @@ def test_async_sdk_and_guard_integrate_with_real_asgi_api(
                 )
 
             assert calls == 0
-            grant = await client.approve(
+            grant = await reviewer_client.approve(
                 pending.value.decision.decision_id,
-                resolved_by="async-security-reviewer",
             )
             result = await guard.execute_approved(
                 execution_grant=grant.execution_grant,

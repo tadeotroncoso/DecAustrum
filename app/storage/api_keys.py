@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.api_keys import (
     ProjectApiKeyMetadata,
+    ProjectApiKeyPrincipal,
     ProjectApiKeyRecord,
 )
 from app.project_models import Project
@@ -26,16 +27,18 @@ class ProjectApiKeyRepository:
                 project_id,
                 key_prefix,
                 key_hash,
+                role,
                 created_at,
                 revoked_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(api_key.api_key_id),
                 str(api_key.project_id),
                 api_key.key_prefix,
                 api_key.key_hash,
+                api_key.role,
                 api_key.created_at.isoformat(),
                 (
                     api_key.revoked_at.isoformat()
@@ -54,6 +57,7 @@ class ProjectApiKeyRepository:
                 "api_key_id": row["api_key_id"],
                 "project_id": row["project_id"],
                 "key_prefix": row["key_prefix"],
+                "role": row["role"],
                 "created_at": row["created_at"],
                 "revoked_at": row["revoked_at"],
             }
@@ -77,6 +81,7 @@ class ProjectApiKeyRepository:
                 api_key_id,
                 project_id,
                 key_prefix,
+                role,
                 created_at,
                 revoked_at
             FROM project_api_keys
@@ -109,6 +114,7 @@ class ProjectApiKeyRepository:
                     api_key_id,
                     project_id,
                     key_prefix,
+                    role,
                     created_at,
                     revoked_at
                 FROM project_api_keys
@@ -183,16 +189,18 @@ class ProjectApiKeyRepository:
                 revoked_at=revoked_at,
             )
 
-    def get_active_project_by_hash(
+    def get_active_principal_by_hash(
         self,
         key_hash: str,
-    ) -> Project | None:
+    ) -> ProjectApiKeyPrincipal | None:
         with self.database.connect() as connection:
             connection.row_factory = sqlite3.Row
 
             row = connection.execute(
                 """
                 SELECT
+                    project_api_keys.api_key_id,
+                    project_api_keys.role,
                     projects.project_id,
                     projects.name,
                     projects.status,
@@ -212,12 +220,23 @@ class ProjectApiKeyRepository:
         if row is None:
             return None
 
-        return Project.model_validate(
-            {
-                "project_id": row["project_id"],
-                "name": row["name"],
-                "status": row["status"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            }
+        return ProjectApiKeyPrincipal(
+            api_key_id=row["api_key_id"],
+            role=row["role"],
+            project=Project.model_validate(
+                {
+                    "project_id": row["project_id"],
+                    "name": row["name"],
+                    "status": row["status"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+            ),
         )
+
+    def get_active_project_by_hash(
+        self,
+        key_hash: str,
+    ) -> Project | None:
+        principal = self.get_active_principal_by_hash(key_hash)
+        return principal.project if principal is not None else None

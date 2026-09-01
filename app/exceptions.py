@@ -154,6 +154,16 @@ class DecisionIntegrityMigrationError(Exception):
         )
 
 
+class EvidenceExportSizeLimitError(Exception):
+    def __init__(self, scope: str, maximum_bytes: int) -> None:
+        self.scope = scope
+        self.maximum_bytes = maximum_bytes
+
+        super().__init__(
+            f"Evidence {scope} exceeds the {maximum_bytes}-byte limit."
+        )
+
+
 class WebhookSubscriptionNotFoundError(Exception):
     def __init__(
         self,

@@ -43,6 +43,7 @@ def bootstrap_default_project(
         project_id=DEFAULT_PROJECT_ID,
         key_prefix=get_api_key_prefix(api_key),
         key_hash=key_hash,
+        role="RUNTIME",
         created_at=timestamp,
     )
 

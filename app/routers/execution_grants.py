@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 
 from app.dependencies import (
-    get_authenticated_project,
     get_evidence_store,
     get_execution_grant_secret,
+    get_runtime_project,
 )
 from app.evidence_store import EvidenceStore
 from app.execution_models import (
@@ -24,7 +24,7 @@ router = APIRouter()
 )
 def consume_execution_grant(
     request: ExecutionGrantConsumptionRequest,
-    project: Project = Depends(get_authenticated_project),
+    project: Project = Depends(get_runtime_project),
     store: EvidenceStore = Depends(get_evidence_store),
     execution_grant_secret: str = Depends(
         get_execution_grant_secret

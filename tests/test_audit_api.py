@@ -138,6 +138,7 @@ def test_project_provisioning_audits_actor_reason_and_safe_data():
         "api_key_id",
         "project_id",
         "key_prefix",
+        "role",
         "created_at",
         "revoked_at",
     }
@@ -262,6 +263,11 @@ def test_complete_policy_lifecycle_is_audited():
 def test_approval_resolution_is_audited_with_project_actor():
     provisioned = provision_project("Approval Audit")
     project_id = provisioned["project"]["project_id"]
+    reviewer = test_client.post(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers=admin_headers(),
+        json={"role": "REVIEWER"},
+    ).json()
     authorization = test_client.post(
         "/v1/authorize",
         headers=project_headers(provisioned["api_key"]),
@@ -276,11 +282,8 @@ def test_approval_resolution_is_audited_with_project_actor():
 
     resolution = test_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        headers=project_headers(provisioned["api_key"]),
-        json={
-            "resolved_by": "finance-reviewer",
-            "reason": "Customer evidence verified.",
-        },
+        headers=project_headers(reviewer["api_key"]),
+        json={"reason": "Customer evidence verified."},
     )
     assert resolution.status_code == 200
 
@@ -291,7 +294,9 @@ def test_approval_resolution_is_audited_with_project_actor():
     assert len(events) == 1
     event = events[0]
     assert event["actor_type"] == "PROJECT"
-    assert event["actor_id"] == "finance-reviewer"
+    assert event["actor_id"] == (
+        f"reviewer-key:{reviewer['key']['api_key_id']}"
+    )
     assert event["reason"] == "Customer evidence verified."
     assert event["resource_id"] == decision_id
     assert event["before"]["status"] == "PENDING"

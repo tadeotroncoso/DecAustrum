@@ -1,10 +1,12 @@
 """Run a bank transfer only after DecAustrum authorizes it.
 
-Start the local API first, configure DECAUSTRUM_API_KEY and
-DECAUSTRUM_BASE_URL, then run this file. The inline approval is deliberately a
-demo shortcut; production reviewers should approve through a separate trusted
-workflow and pass the short-lived grant to the execution runtime securely.
+Start the local API first, configure separate DECAUSTRUM_API_KEY and
+DECAUSTRUM_REVIEWER_API_KEY values plus DECAUSTRUM_BASE_URL, then run this
+file. Production reviewers should approve through a separate trusted workflow
+and pass the short-lived grant to the execution runtime securely.
 """
+
+import os
 
 from decaustrum import (
     ActionDeniedError,
@@ -30,7 +32,19 @@ def perform_bank_transfer() -> dict[str, object]:
 
 
 def main() -> None:
-    with DecAustrumClient.from_environment() as client:
+    base_url = os.getenv(
+        "DECAUSTRUM_BASE_URL",
+        "http://localhost:8000",
+    )
+    reviewer_api_key = os.environ["DECAUSTRUM_REVIEWER_API_KEY"]
+
+    with (
+        DecAustrumClient.from_environment() as client,
+        DecAustrumClient(
+            api_key=reviewer_api_key,
+            base_url=base_url,
+        ) as reviewer,
+    ):
         guard = DecAustrumGuard(client)
 
         try:
@@ -50,10 +64,8 @@ def main() -> None:
                 f"{exc.decision.decision_id}."
             )
 
-            # Demo only: use a separate reviewer workflow in production.
-            grant = client.approve(
+            grant = reviewer.approve(
                 exc.decision.decision_id,
-                resolved_by="example-security-reviewer",
                 reason="Approved by the SDK integration example.",
             )
             result = guard.execute_approved(

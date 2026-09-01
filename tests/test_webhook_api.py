@@ -309,6 +309,11 @@ def test_approval_workflow_emits_requested_and_resolved_events():
     provisioned = provision_project("Webhook Approval")
     project_id = provisioned["project"]["project_id"]
     api_key = provisioned["api_key"]
+    reviewer = test_client.post(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers=admin_headers(),
+        json={"role": "REVIEWER"},
+    ).json()
     create_subscription(
         project_id,
         ["approval.requested", "approval.resolved"],
@@ -325,11 +330,8 @@ def test_approval_workflow_emits_requested_and_resolved_events():
     decision_id = authorize.json()["decision_id"]
     resolution = test_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        headers={"X-API-Key": api_key},
-        json={
-            "resolved_by": "risk-reviewer",
-            "reason": "Reviewed in ticket APR-7.",
-        },
+        headers={"X-API-Key": reviewer["api_key"]},
+        json={"reason": "Reviewed in ticket APR-7."},
     )
     events = test_client.get(
         (

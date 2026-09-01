@@ -18,8 +18,16 @@ DecAustrum deliberately separates project traffic from control-plane traffic.
 | Boundary | Header | Used for |
 | --- | --- | --- |
 | Public | None | Health checks only. |
-| Project | `X-API-Key` | Authorization, project policies, decisions, approvals, grants, integrity, and evidence. |
+| Project read | `X-API-Key` with `RUNTIME` or `REVIEWER` role | Project policies, decisions, approvals, integrity, and evidence. |
+| Project runtime | `X-API-Key` with `RUNTIME` role | Authorization and execution-grant consumption. |
+| Project reviewer | `X-API-Key` with `REVIEWER` role | Approval and rejection. |
 | Administrator | `X-Admin-API-Key` | Project provisioning, API keys, policy configuration, audit, webhooks, cross-project evidence, and metrics. |
+
+The role belongs to the API-key record, not to caller-supplied request data.
+The first key created with a project is `RUNTIME`. Administrators provision a
+separate `REVIEWER` key for human or trusted review workflows. A runtime key
+cannot approve the request it submitted, and a reviewer key cannot authorize
+or consume an action.
 
 Administrative mutations also accept `X-Admin-Actor` and `X-Audit-Reason`.
 They make the responsible actor and reason explicit in the immutable
@@ -29,6 +37,8 @@ must never be distributed to project clients.
 All `/v1` write requests with a body use `application/json`. A caller may send a
 safe `X-Request-ID`; otherwise the API generates one. The response always
 returns the effective request identifier in `X-Request-ID`.
+Contexts and policy values must be strict JSON: `NaN`, positive or negative
+infinity, numeric overflow to infinity, and non-string object keys are rejected.
 
 ## Request semantics
 
@@ -92,6 +102,7 @@ The main status classes are:
 | Status | Meaning |
 | --- | --- |
 | `401` | Missing or invalid project/admin credentials, or an invalid execution grant. |
+| `403` | The authenticated API-key role is not allowed to perform the operation. |
 | `404` | Resource not found inside the authenticated boundary. |
 | `409` | Idempotency, lifecycle, replay, or immutable-state conflict. |
 | `413` | Request body or evidence export exceeds its configured limit. |
@@ -137,6 +148,12 @@ hashes, chain continuity, selection boundaries, and an optional external
 checkpoint. See the [operations guide](operations.md) for verifier commands and
 the integrity threat model.
 
+One export is bounded to 2,000 selected records and 32 MiB of canonical record
+data. A ZIP bundle additionally bounds its full chain to 10,000 records and
+32 MiB, and bounds generated archive data to 64 MiB. Requests beyond those
+limits return `413` and must be narrowed. CSV exports prefix cells that could be
+interpreted as spreadsheet formulas; JSON and NDJSON retain the original text.
+
 ### Approval and execution
 
 | Method | Route | Purpose |
@@ -151,7 +168,9 @@ The closed approval flow is:
 
 1. Authorize an action.
 2. If the result is `REQUIRE_APPROVAL`, review the pending approval.
-3. Approve it to obtain a short-lived bearer grant, or reject it terminally.
+3. Use a separate `REVIEWER` key to approve it and obtain a short-lived bearer
+   grant, or reject it terminally. The optional body contains only `reason`;
+   reviewer identity is derived from the authenticated key.
 4. Submit the grant with the original agent, action, and context.
 5. Run the protected side effect only after grant consumption succeeds.
 
@@ -175,7 +194,15 @@ Every route in this section requires `X-Admin-API-Key`.
 | `DELETE` | `/v1/admin/projects/{project_id}/api-keys/{api_key_id}` | Revoke a project key. |
 
 Plaintext project keys are returned only when provisioned. The database stores
-key hashes and non-secret metadata.
+key hashes, roles, and non-secret metadata. Omitting the request body when an
+additional key is created preserves the `RUNTIME` default. To create a review
+credential, send:
+
+```json
+{
+  "role": "REVIEWER"
+}
+```
 
 ### Policy configuration and history
 

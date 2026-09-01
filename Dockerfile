@@ -1,8 +1,4 @@
-# syntax=docker/dockerfile:1.7
-
 FROM python:3.12.14-slim-bookworm@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579
-
-ARG PIP_VERSION=26.2.1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -15,9 +11,11 @@ RUN groupadd --system --gid 10001 decaustrum \
     && useradd --system --uid 10001 --gid decaustrum \
         --home-dir /nonexistent --no-create-home decaustrum
 
-COPY requirements/runtime.lock ./requirements/runtime.lock
+COPY requirements/bootstrap.lock requirements/runtime.lock ./requirements/
 
-RUN python -m pip install --upgrade "pip==${PIP_VERSION}" \
+RUN python -m pip install --upgrade --require-hashes --no-deps \
+        --only-binary=:all: \
+        --requirement requirements/bootstrap.lock \
     && python -m pip install --require-hashes --no-deps \
         --requirement requirements/runtime.lock
 

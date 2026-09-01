@@ -408,6 +408,9 @@ CREATE TABLE IF NOT EXISTS project_api_keys (
     project_id TEXT NOT NULL,
     key_prefix TEXT NOT NULL,
     key_hash TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (
+        role IN ('RUNTIME', 'REVIEWER')
+    ),
     created_at TEXT NOT NULL,
     revoked_at TEXT,
     FOREIGN KEY (project_id)
@@ -979,6 +982,26 @@ class SQLiteDatabase:
         )
 
     @staticmethod
+    def _migrate_project_api_keys_table(
+        connection: sqlite3.Connection,
+    ) -> None:
+        columns = connection.execute(
+            "PRAGMA table_info(project_api_keys)"
+        ).fetchall()
+        column_names = {column[1] for column in columns}
+
+        if "role" in column_names:
+            return
+
+        connection.execute(
+            """
+            ALTER TABLE project_api_keys
+            ADD COLUMN role TEXT NOT NULL DEFAULT 'RUNTIME'
+            CHECK (role IN ('RUNTIME', 'REVIEWER'))
+            """
+        )
+
+    @staticmethod
     def _migrate_decisions_table(
         connection: sqlite3.Connection,
     ) -> None:
@@ -1391,6 +1414,7 @@ class SQLiteDatabase:
             connection.execute(CREATE_PROJECTS_TABLE)
             self._migrate_projects_table(connection)
             connection.execute(CREATE_PROJECT_API_KEYS_TABLE)
+            self._migrate_project_api_keys_table(connection)
             connection.execute(
                 CREATE_WEBHOOK_SUBSCRIPTIONS_TABLE
             )

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.api_keys import (
     ProjectApiKeyMetadata,
+    ProjectApiKeyPrincipal,
     ProjectApiKeyRecord,
 )
 from app.approval_models import (
@@ -411,6 +412,7 @@ class EvidenceStore:
         project_id: UUID,
         filters: DecisionSearchFilters,
         maximum_records: int,
+        maximum_bytes: int,
     ) -> tuple[
         EvidenceExportSnapshot,
         list[VerifiableDecisionRecord],
@@ -420,6 +422,7 @@ class EvidenceStore:
             project_id=project_id,
             filters=filters,
             maximum_records=maximum_records,
+            maximum_bytes=maximum_bytes,
         )
 
     def iter_evidence_records(
@@ -441,11 +444,13 @@ class EvidenceStore:
         project_id: UUID,
         filters: DecisionSearchFilters,
         max_sequence_number: int,
+        maximum_bytes: int = 32 * 1024 * 1024,
     ) -> list[VerifiableDecisionRecord]:
         return self.evidence_exports.list_records(
             project_id=project_id,
             filters=filters,
             max_sequence_number=max_sequence_number,
+            maximum_bytes=maximum_bytes,
         )
 
     def list_evidence_chain(
@@ -453,10 +458,12 @@ class EvidenceStore:
         *,
         project_id: UUID,
         max_sequence_number: int,
+        maximum_bytes: int = 32 * 1024 * 1024,
     ) -> list[DecisionIntegrityProof]:
         return self.evidence_exports.list_chain(
             project_id=project_id,
             max_sequence_number=max_sequence_number,
+            maximum_bytes=maximum_bytes,
         )
 
     def get_idempotency_record(
@@ -1064,6 +1071,7 @@ class EvidenceStore:
                             api_key_id=api_key.api_key_id,
                             project_id=api_key.project_id,
                             key_prefix=api_key.key_prefix,
+                            role=api_key.role,
                             created_at=api_key.created_at,
                             revoked_at=api_key.revoked_at,
                         ),
@@ -1113,6 +1121,7 @@ class EvidenceStore:
                             api_key_id=api_key.api_key_id,
                             project_id=api_key.project_id,
                             key_prefix=api_key.key_prefix,
+                            role=api_key.role,
                             created_at=api_key.created_at,
                             revoked_at=api_key.revoked_at,
                         ),
@@ -1186,6 +1195,12 @@ class EvidenceStore:
         return self.api_keys.get_active_project_by_hash(
             key_hash
         )
+
+    def get_active_api_key_principal_by_hash(
+        self,
+        key_hash: str,
+    ) -> ProjectApiKeyPrincipal | None:
+        return self.api_keys.get_active_principal_by_hash(key_hash)
 
     def save_webhook_subscription(
         self,

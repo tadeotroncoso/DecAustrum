@@ -51,6 +51,11 @@ def test_bootstrap_creates_default_project_and_key(
     )
 
     assert authenticated_project == project
+    principal = store.get_active_api_key_principal_by_hash(
+        hash_api_key(api_key)
+    )
+    assert principal is not None
+    assert principal.role == "RUNTIME"
 
 
 def test_bootstrap_is_idempotent(tmp_path):

@@ -20,7 +20,12 @@ if [ ! -x "$virtual_python" ]; then
     "$python_command" -m venv "$virtual_environment"
 fi
 
-"$virtual_python" -m pip install --upgrade 'pip==26.2.1'
+"$virtual_python" -m pip install \
+    --upgrade \
+    --require-hashes \
+    --no-deps \
+    --only-binary=:all: \
+    --requirement "$repository_root/requirements/bootstrap.lock"
 
 if [ "${1:-}" = "--runtime" ]; then
     lock_file="$repository_root/requirements/runtime.lock"

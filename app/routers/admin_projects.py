@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.api_keys import (
+    ProjectApiKeyCreateRequest,
     ProjectApiKeyMetadata,
     ProjectApiKeyPage,
     ProjectApiKeyProvisioningResponse,
@@ -127,6 +128,7 @@ def update_project_status(
 )
 def provision_project_api_key(
     project_id: UUID,
+    request: ProjectApiKeyCreateRequest | None = None,
     audit_context: AuditContext = Depends(
         require_admin_access
     ),
@@ -134,6 +136,7 @@ def provision_project_api_key(
 ) -> ProjectApiKeyProvisioningResponse:
     return create_project_api_key(
         project_id=project_id,
+        role=(request.role if request is not None else "RUNTIME"),
         store=store,
         audit_context=audit_context,
     )

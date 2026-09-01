@@ -35,6 +35,16 @@ Or use `DecAustrumClient.from_environment()`, which reads:
 - `DECAUSTRUM_API_KEY` (required);
 - `DECAUSTRUM_BASE_URL` (defaults to `http://localhost:8000`).
 
+The runnable approval example additionally reads
+`DECAUSTRUM_REVIEWER_API_KEY`. Provision that key with role `REVIEWER`; the
+general `from_environment()` constructor intentionally continues to use only
+the runtime key.
+
+Plaintext HTTP is accepted only for loopback hosts such as `localhost`,
+`127.0.0.1`, and `::1`. Remote base URLs must use HTTPS. SDK requests never
+follow redirects while carrying `X-API-Key`, including when an injected HTTPX
+client has redirect following enabled.
+
 The SDK sends `X-API-Key`, a versioned `User-Agent`, and a unique
 `X-Request-ID` on every call. The request ID returned by DecAustrum is attached
 to structured SDK exceptions for log correlation.
@@ -103,13 +113,19 @@ external side effect after the callback starts.
 
 ## Closed approval flow
 
-The reviewer resolves the pending request. Approval returns the only plaintext
-copy of a short-lived execution grant:
+The reviewer resolves the pending request with a separate `REVIEWER` API key.
+The runtime key cannot resolve its own request, and the reviewer identity is
+derived by the server from the authenticated key. Approval returns the only
+plaintext copy of a short-lived execution grant:
 
 ```python
-grant = client.approve(
+reviewer = DecAustrumClient(
+    base_url="https://decaustrum.internal",
+    api_key=reviewer_api_key,
+)
+
+grant = reviewer.approve(
     decision_id,
-    resolved_by="security-reviewer",
     reason="Evidence reviewed.",
 )
 ```
@@ -194,6 +210,7 @@ python .\sdk\python\examples\protected_bank_transfer.py
 ```
 
 The example goes through real HTTP client code and the complete backend state
-machine. Its inline reviewer is a local demonstration only. The automated
+machine. Set `DECAUSTRUM_API_KEY` to a `RUNTIME` key and
+`DECAUSTRUM_REVIEWER_API_KEY` to a separate `REVIEWER` key. The automated
 integration suite runs the same path against the FastAPI ASGI application and
 asserts that the business callback executes exactly once.

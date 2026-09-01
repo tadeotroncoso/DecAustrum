@@ -52,9 +52,11 @@ flowchart LR
 ```
 
 For a `REQUIRE_APPROVAL` result, the authorization and pending approval are
-created in the same transaction. An approval can produce a signed execution
-grant bound to the original project, decision, agent, action, and context. The
-grant is consumed before the protected callback runs and cannot be replayed.
+created in the same transaction. A separate `REVIEWER` API key must resolve
+the request; the `RUNTIME` key that submitted it cannot approve it. Approval
+can produce a signed execution grant bound to the original project, decision,
+agent, action, and context. The grant is consumed before the protected callback
+runs and cannot be replayed.
 
 ## Authorization example
 
@@ -110,6 +112,9 @@ decision. Reusing that key for a different request is rejected as a conflict.
   approval, idempotency record, and webhook events are committed together.
 - **Project isolation.** API keys, active policies, policy history, decisions,
   approvals, grants, audit records, and webhooks are scoped to a project.
+- **Separated project roles.** `RUNTIME` keys authorize and consume grants;
+  `REVIEWER` keys approve or reject. Reviewer identity is derived from the
+  authenticated key rather than accepted from request data.
 - **Deterministic policy evaluation.** Conditions support `all` and `any`
   matching; `DENY` takes precedence over `REQUIRE_APPROVAL`, which takes
   precedence over `ALLOW`.
@@ -120,12 +125,13 @@ decision. Reusing that key for a different request is rejected as a conflict.
   of rewriting history.
 - **Tamper-evident evidence.** Canonical decision records form a per-project
   SHA-256 chain. JSON, NDJSON, CSV, and offline ZIP evidence exports are
-  available.
+  available with record and byte bounds; CSV text is neutralized before it can
+  be interpreted as a spreadsheet formula.
 - **Transactional event delivery.** A separate worker delivers HMAC-signed
   webhooks at least once, with retry and dead-letter handling.
 - **Defensive API boundary.** Trusted hosts, optional HTTPS enforcement,
   content and body-size checks, rate limits, safe error responses, structured
-  logs, and bounded Prometheus metrics are built in.
+  logs, strict finite JSON values, and bounded Prometheus metrics are built in.
 
 ## Quick start
 
@@ -141,6 +147,13 @@ reuse them in a shared or production environment.
 Copy-Item .env.example .env
 powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
 .\scripts\run-api.ps1
+```
+
+If several Python installations are present, select the interpreter explicitly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 `
+    -Python "C:\Path\To\Python312\python.exe"
 ```
 
 ### Linux or macOS
@@ -223,7 +236,9 @@ with DecAustrumClient.from_environment() as client:
 
 For `DENY` and `REQUIRE_APPROVAL`, the SDK raises a typed exception and does
 not invoke the callback. The SDK also supports asynchronous callers, approval
-polling, and execution-grant consumption. See the [Python SDK guide](docs/sdk-python.md)
+polling, and execution-grant consumption. It refuses plaintext HTTP for remote
+hosts and never follows redirects while carrying an API key; local loopback
+HTTP remains available for development. See the [Python SDK guide](docs/sdk-python.md)
 and [runnable integration example](sdk/python/examples/protected_bank_transfer.py).
 
 ## Verification
@@ -240,7 +255,7 @@ or:
 sh ./scripts/check.sh
 ```
 
-The repository has more than 480 automated tests across 46 test files. The
+The repository has more than 500 automated tests across 47 test files. The
 gate enforces an 88.0% combined line-and-branch coverage floor, checks lint
 with Ruff and static types with mypy, audits dependency vulnerabilities,
 rejects new Python security findings, scans publishable files for secrets, and

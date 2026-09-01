@@ -22,11 +22,13 @@ class AuthorizationDecisionRepository:
             evidence_json = json.dumps(
                 authorization.evidence.model_dump(mode="json"),
                 sort_keys=True,
+                allow_nan=False,
             )
 
         context_json = json.dumps(
             authorization.context,
             sort_keys=True,
+            allow_nan=False,
         )
 
         trace_json = json.dumps(
@@ -35,6 +37,7 @@ class AuthorizationDecisionRepository:
                 for entry in authorization.trace
             ],
             sort_keys=True,
+            allow_nan=False,
         )
 
         connection.execute(

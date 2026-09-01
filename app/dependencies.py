@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import Depends, Header, Request
 
+from app.api_keys import ProjectApiKeyPrincipal
 from app.audit_models import (
     AuditActorIdentifier,
     AuditContext,
@@ -16,9 +17,10 @@ from app.security import (
     admin_api_key_header,
     api_key_header,
     authenticate_admin,
-    authenticate_project,
+    authenticate_project_api_key,
     get_configured_admin_api_key,
     get_configured_execution_grant_secret,
+    require_project_api_key_role,
 )
 from app.webhooks import (
     UrllibWebhookTransport,
@@ -50,20 +52,46 @@ def get_execution_grant_secret() -> str:
     return get_configured_execution_grant_secret()
 
 
-def get_authenticated_project(
+def get_authenticated_api_key_principal(
     request: Request,
     provided_api_key: Annotated[
         str | None,
         Depends(api_key_header),
     ],
     store: EvidenceStore = Depends(get_evidence_store),
-) -> Project:
-    project = authenticate_project(
+) -> ProjectApiKeyPrincipal:
+    principal = authenticate_project_api_key(
         provided_api_key=provided_api_key,
         store=store,
     )
     request.state.principal_type = "project"
-    return project
+    return principal
+
+
+def get_authenticated_project(
+    principal: ProjectApiKeyPrincipal = Depends(
+        get_authenticated_api_key_principal
+    ),
+) -> Project:
+    return principal.project
+
+
+def get_runtime_project(
+    principal: ProjectApiKeyPrincipal = Depends(
+        get_authenticated_api_key_principal
+    ),
+) -> Project:
+    require_project_api_key_role(principal, "RUNTIME")
+    return principal.project
+
+
+def get_reviewer_principal(
+    principal: ProjectApiKeyPrincipal = Depends(
+        get_authenticated_api_key_principal
+    ),
+) -> ProjectApiKeyPrincipal:
+    require_project_api_key_role(principal, "REVIEWER")
+    return principal
 
 
 def require_admin_access(

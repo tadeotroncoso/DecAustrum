@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$RuntimeOnly
+    [switch]$RuntimeOnly,
+    [string]$Python = $env:DECAUSTRUM_PYTHON
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,7 +23,11 @@ function Assert-NativeCommandSucceeded {
 $repositoryRoot = (Resolve-Path -LiteralPath (
     Join-Path $PSScriptRoot ".."
 )).Path
-$pythonCommand = Get-Command python -ErrorAction Stop
+if ([string]::IsNullOrWhiteSpace($Python)) {
+    $Python = "python"
+}
+
+$pythonCommand = Get-Command $Python -ErrorAction Stop
 $pythonMinor = & $pythonCommand.Source -c (
     "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 )
@@ -44,7 +49,30 @@ if (-not (Test-Path -LiteralPath $virtualPython)) {
         -Operation "Virtual environment creation"
 }
 
-& $virtualPython -m pip install --upgrade "pip==26.2.1"
+$virtualPythonMinor = & $virtualPython -c (
+    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+)
+Assert-NativeCommandSucceeded `
+    -ExitCode $LASTEXITCODE `
+    -Operation "Virtual environment Python version check"
+
+if ($virtualPythonMinor -ne "3.12") {
+    throw (
+        "Existing .venv uses Python $virtualPythonMinor; remove it and " +
+        "run bootstrap.ps1 again with -Python <path-to-python-3.12>."
+    )
+}
+
+$bootstrapLock = Join-Path (
+    $repositoryRoot
+) "requirements\bootstrap.lock"
+
+& $virtualPython -m pip install `
+    --upgrade `
+    --require-hashes `
+    --no-deps `
+    --only-binary=:all: `
+    --requirement $bootstrapLock
 Assert-NativeCommandSucceeded `
     -ExitCode $LASTEXITCODE `
     -Operation "pip installation"

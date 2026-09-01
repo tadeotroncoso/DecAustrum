@@ -7,6 +7,7 @@ from app.api_keys import (
     ProjectApiKeyMetadata,
     ProjectApiKeyProvisioningResponse,
     ProjectApiKeyRecord,
+    ProjectApiKeyRole,
     generate_project_api_key,
     get_api_key_prefix,
     hash_api_key,
@@ -66,6 +67,7 @@ def create_project(
         project_id=project.project_id,
         key_prefix=get_api_key_prefix(api_key),
         key_hash=hash_api_key(api_key),
+        role="RUNTIME",
         created_at=created_at,
     )
 
@@ -84,6 +86,7 @@ def create_project(
 
 def create_project_api_key(
     project_id: UUID,
+    role: ProjectApiKeyRole,
     store: EvidenceStore,
     audit_context: AuditContext,
 ) -> ProjectApiKeyProvisioningResponse:
@@ -111,6 +114,7 @@ def create_project_api_key(
         project_id=project_id,
         key_prefix=get_api_key_prefix(api_key),
         key_hash=hash_api_key(api_key),
+        role=role,
         created_at=created_at,
     )
 
@@ -123,6 +127,7 @@ def create_project_api_key(
         api_key_id=record.api_key_id,
         project_id=record.project_id,
         key_prefix=record.key_prefix,
+        role=record.role,
         created_at=record.created_at,
         revoked_at=record.revoked_at,
     )

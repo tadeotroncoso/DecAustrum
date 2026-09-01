@@ -23,6 +23,10 @@ from app.project_models import (
 )
 
 TEST_API_KEY = "test-api-key"
+TEST_REVIEWER_API_KEY = "test-reviewer-api-key"
+TEST_REVIEWER_API_KEY_ID = UUID(
+    "1f7ef1dd-64b1-4ac6-9080-2a60320931ba"
+)
 TEST_ADMIN_API_KEY = "test-admin-api-key"
 TEST_EXECUTION_GRANT_SECRET = (
     "test-execution-grant-secret-at-least-32-bytes"
@@ -34,6 +38,10 @@ client = TestClient(
 )
 
 unauthenticated_client = TestClient(app)
+reviewer_client = TestClient(
+    app,
+    headers={"X-API-Key": TEST_REVIEWER_API_KEY},
+)
 
 @pytest.fixture(autouse=True)
 def temporary_evidence_store(tmp_path, monkeypatch):
@@ -55,6 +63,16 @@ def temporary_evidence_store(tmp_path, monkeypatch):
     bootstrap_default_project(
         store=store,
         api_key=TEST_API_KEY,
+    )
+    store.save_project_api_key(
+        ProjectApiKeyRecord(
+            api_key_id=TEST_REVIEWER_API_KEY_ID,
+            project_id=DEFAULT_PROJECT_ID,
+            key_prefix=get_api_key_prefix(TEST_REVIEWER_API_KEY),
+            key_hash=hash_api_key(TEST_REVIEWER_API_KEY),
+            role="REVIEWER",
+            created_at=datetime.now(timezone.utc),
+        )
     )
 
     store.seed_project_policies(
@@ -446,6 +464,38 @@ def test_invalid_authorization_is_not_persisted(
 
     assert stored_decisions == 0
 
+
+@pytest.mark.parametrize(
+    "number_literal",
+    ["NaN", "Infinity", "-Infinity", "1e400"],
+)
+def test_authorize_rejects_non_finite_json_numbers(
+    number_literal,
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        content=(
+            '{"agent":"finance-agent",'
+            '"action":"bank_transfer",'
+            '"context":{"amount":'
+            f"{number_literal}"
+            ',"account_verified":true}}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+
+    with sqlite3.connect(
+        temporary_evidence_store.database_path
+    ) as connection:
+        stored_decisions = connection.execute(
+            "SELECT COUNT(*) FROM authorization_decisions"
+        ).fetchone()[0]
+
+    assert stored_decisions == 0
+
 def test_list_decisions_returns_empty_page():
     response = client.get("/v1/decisions")
 
@@ -676,11 +726,9 @@ def create_pending_approval() -> str:
 def test_approve_pending_request():
     decision_id = create_pending_approval()
 
-    response = client.post(
+    response = reviewer_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        json={
-            "resolved_by": "security-admin",
-        },
+        json={},
     )
 
     assert response.status_code == 200
@@ -688,39 +736,74 @@ def test_approve_pending_request():
     data = response.json()
 
     assert data["status"] == "APPROVED"
-    assert data["resolved_by"] == "security-admin"
+    assert data["resolved_by"] == (
+        f"reviewer-key:{TEST_REVIEWER_API_KEY_ID}"
+    )
     assert data["resolved_at"] is not None
-    assert data["execution_grant"].startswith("rgt_exec_v1.")
+    assert data["execution_grant"].startswith("dag_exec_v1.")
     assert data["grant_id"]
     assert data["grant_expires_at"]
+
+
+def test_runtime_key_cannot_approve_its_own_request():
+    decision_id = create_pending_approval()
+
+    response = client.post(
+        f"/v1/approvals/{decision_id}/approve",
+        json={},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == (
+        "insufficient_api_key_role"
+    )
+
+
+def test_reviewer_key_cannot_authorize_runtime_action():
+    response = reviewer_client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": {
+                "amount": 25_000,
+                "account_verified": True,
+            },
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == (
+        "insufficient_api_key_role"
+    )
 
 
 def test_reject_pending_request():
     decision_id = create_pending_approval()
 
-    response = client.post(
+    response = reviewer_client.post(
         f"/v1/approvals/{decision_id}/reject",
-        json={
-            "resolved_by": "risk-admin",
-        },
+        json={},
     )
 
     assert response.status_code == 200
     assert response.json()["status"] == "REJECTED"
-    assert response.json()["resolved_by"] == "risk-admin"
+    assert response.json()["resolved_by"] == (
+        f"reviewer-key:{TEST_REVIEWER_API_KEY_ID}"
+    )
 
 
 def test_cannot_resolve_request_twice():
     decision_id = create_pending_approval()
 
-    first_response = client.post(
+    first_response = reviewer_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        json={"resolved_by": "first-admin"},
+        json={},
     )
 
-    second_response = client.post(
+    second_response = reviewer_client.post(
         f"/v1/approvals/{decision_id}/reject",
-        json={"resolved_by": "second-admin"},
+        json={},
     )
 
     assert first_response.status_code == 200
@@ -735,9 +818,9 @@ def test_cannot_resolve_request_twice():
 def test_resolve_unknown_approval_returns_404():
     decision_id = uuid4()
 
-    response = client.post(
+    response = reviewer_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        json={"resolved_by": "security-admin"},
+        json={},
     )
 
     assert response.status_code == 404
@@ -746,12 +829,12 @@ def test_resolve_unknown_approval_returns_404():
     )
 
 
-def test_resolution_rejects_blank_resolver():
+def test_resolution_rejects_client_supplied_resolver():
     decision_id = create_pending_approval()
 
-    response = client.post(
+    response = reviewer_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        json={"resolved_by": "   "},
+        json={"resolved_by": "spoofed-reviewer"},
     )
 
     assert response.status_code == 422
@@ -775,9 +858,9 @@ def test_list_approvals_filters_by_status():
     approved_id = create_pending_approval()
     pending_id = create_pending_approval()
 
-    approve_response = client.post(
+    approve_response = reviewer_client.post(
         f"/v1/approvals/{approved_id}/approve",
-        json={"resolved_by": "security-admin"},
+        json={},
     )
 
     assert approve_response.status_code == 200
@@ -981,7 +1064,7 @@ def test_admin_can_provision_project(
         connection.row_factory = sqlite3.Row
         stored_key = connection.execute(
             """
-            SELECT key_prefix, key_hash
+            SELECT key_prefix, key_hash, role
             FROM project_api_keys
             WHERE project_id = ?
             """,
@@ -995,6 +1078,7 @@ def test_admin_can_provision_project(
     assert stored_key["key_hash"] == (
         hash_api_key(issued_api_key)
     )
+    assert stored_key["role"] == "RUNTIME"
     assert stored_key["key_hash"] != issued_api_key
 
     authorization_response = unauthenticated_client.post(
@@ -1045,6 +1129,7 @@ def test_admin_can_create_additional_project_api_key():
     assert issued_api_key.startswith("dak_")
     assert issued_api_key != provisioned["api_key"]
     assert metadata["project_id"] == project_id
+    assert metadata["role"] == "RUNTIME"
     assert metadata["key_prefix"] == (
         get_api_key_prefix(issued_api_key)
     )
@@ -1064,6 +1149,35 @@ def test_admin_can_create_additional_project_api_key():
     assert authorization_response.status_code == 200
     assert authorization_response.json()["project_id"] == (
         project_id
+    )
+
+
+def test_admin_can_create_reviewer_api_key():
+    provisioned = provision_test_project()
+    project_id = provisioned["project"]["project_id"]
+
+    response = unauthenticated_client.post(
+        f"/v1/admin/projects/{project_id}/api-keys",
+        headers={"X-Admin-API-Key": TEST_ADMIN_API_KEY},
+        json={"role": "REVIEWER"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["key"]["role"] == "REVIEWER"
+
+    authorization_response = unauthenticated_client.post(
+        "/v1/authorize",
+        headers={"X-API-Key": response.json()["api_key"]},
+        json={
+            "agent": "reviewer",
+            "action": "send_email",
+            "context": {},
+        },
+    )
+
+    assert authorization_response.status_code == 403
+    assert authorization_response.json()["detail"]["code"] == (
+        "insufficient_api_key_role"
     )
 
 
@@ -1116,6 +1230,7 @@ def test_admin_lists_paginated_api_key_metadata():
         "api_key_id",
         "project_id",
         "key_prefix",
+        "role",
         "created_at",
         "revoked_at",
     }
@@ -1659,9 +1774,9 @@ def test_approval_endpoints_are_isolated_between_projects(
     assert cross_project_list.status_code == 200
     assert cross_project_list.json()["total"] == 0
 
-    cross_project_resolution = client.post(
+    cross_project_resolution = reviewer_client.post(
         f"/v1/approvals/{decision_id}/approve",
-        json={"resolved_by": "wrong-project-admin"},
+        json={},
     )
 
     assert cross_project_resolution.status_code == 404

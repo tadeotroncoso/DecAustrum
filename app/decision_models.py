@@ -1,7 +1,8 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
+from app.json_values import validate_json_value
 from app.policy_types import (
     ConditionMatch,
     Decision,
@@ -15,6 +16,15 @@ class ConditionEvidence(BaseModel):
     actual_value: Any
     expected_value: Any
     matched: bool
+
+    @field_validator("actual_value", "expected_value", mode="before")
+    @classmethod
+    def require_strict_json_values(
+        cls,
+        value: Any,
+        info,
+    ) -> Any:
+        return validate_json_value(value, name=info.field_name)
 
 
 class PolicyEvidence(BaseModel):

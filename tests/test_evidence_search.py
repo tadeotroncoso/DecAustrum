@@ -9,6 +9,7 @@ from app.approval_models import ApprovalRecord
 from app.authorization_models import AuthorizationResponse
 from app.evidence_models import DecisionSearchFilters
 from app.evidence_store import EvidenceStore
+from app.exceptions import EvidenceExportSizeLimitError
 from app.services.evidence import prepare_evidence_export
 
 FIRST_PROJECT_ID = UUID(
@@ -215,6 +216,28 @@ def test_snapshot_excludes_decisions_written_after_it(tmp_path):
     assert [item.decision for item in exported] == [first]
     assert len(chain) == 1
     assert chain[0].record_hash == snapshot.chain_head_hash
+
+
+def test_internal_evidence_lists_are_byte_bounded(tmp_path):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+    record = authorization(index=1)
+    store.save_authorization_with_approval(record, None)
+
+    with pytest.raises(EvidenceExportSizeLimitError):
+        store.list_evidence_records(
+            project_id=FIRST_PROJECT_ID,
+            filters=DecisionSearchFilters(),
+            max_sequence_number=1,
+            maximum_bytes=1,
+        )
+
+    with pytest.raises(EvidenceExportSizeLimitError):
+        store.list_evidence_chain(
+            project_id=FIRST_PROJECT_ID,
+            max_sequence_number=1,
+            maximum_bytes=1,
+        )
 
 
 def test_prepared_export_keeps_approval_filter_snapshot_stable(

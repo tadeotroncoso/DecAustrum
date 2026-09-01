@@ -2,12 +2,18 @@ import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app.evidence_store as evidence_store_module
 import app.services.execution_grants as execution_service
+from app.api_keys import (
+    ProjectApiKeyRecord,
+    get_api_key_prefix,
+    hash_api_key,
+)
 from app.bootstrap import bootstrap_default_project
 from app.evidence_store import EvidenceStore
 from app.execution_grants import (
@@ -20,6 +26,10 @@ from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
 TEST_API_KEY = "execution-grant-project-key"
+TEST_REVIEWER_API_KEY = "execution-grant-reviewer-key"
+TEST_REVIEWER_API_KEY_ID = UUID(
+    "da64e49c-7f44-466b-9039-a7623261f315"
+)
 TEST_ADMIN_API_KEY = "execution-grant-admin-key"
 TEST_SECRET = "execution-grant-api-secret-at-least-32-bytes"
 AUTHORIZATION_REQUEST = {
@@ -34,6 +44,10 @@ AUTHORIZATION_REQUEST = {
 client = TestClient(
     app,
     headers={"X-API-Key": TEST_API_KEY},
+)
+reviewer_client = TestClient(
+    app,
+    headers={"X-API-Key": TEST_REVIEWER_API_KEY},
 )
 
 
@@ -51,6 +65,16 @@ def temporary_store(tmp_path, monkeypatch):
     store = EvidenceStore(tmp_path / "decaustrum.db")
     store.initialize()
     bootstrap_default_project(store=store, api_key=TEST_API_KEY)
+    store.save_project_api_key(
+        ProjectApiKeyRecord(
+            api_key_id=TEST_REVIEWER_API_KEY_ID,
+            project_id=DEFAULT_PROJECT_ID,
+            key_prefix=get_api_key_prefix(TEST_REVIEWER_API_KEY),
+            key_hash=hash_api_key(TEST_REVIEWER_API_KEY),
+            role="REVIEWER",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
     store.seed_project_policies(
         project_id=DEFAULT_PROJECT_ID,
         policies=load_policies(POLICIES_DIRECTORY),
@@ -71,15 +95,12 @@ def authorize_and_approve() -> tuple[dict, dict]:
     assert authorization.status_code == 200
     assert authorization.json()["decision"] == "REQUIRE_APPROVAL"
 
-    approval = client.post(
+    approval = reviewer_client.post(
         (
             "/v1/approvals/"
             f"{authorization.json()['decision_id']}/approve"
         ),
-        json={
-            "resolved_by": "security-reviewer",
-            "reason": "Reviewed transfer evidence.",
-        },
+        json={"reason": "Reviewed transfer evidence."},
     )
     assert approval.status_code == 200
     return authorization.json(), approval.json()
@@ -88,7 +109,9 @@ def authorize_and_approve() -> tuple[dict, dict]:
 def consumption_payload(token: str) -> dict:
     return {
         "execution_grant": token,
-        **AUTHORIZATION_REQUEST,
+        "agent": AUTHORIZATION_REQUEST["agent"],
+        "action": AUTHORIZATION_REQUEST["action"],
+        "context": dict(AUTHORIZATION_REQUEST["context"]),
         "consumed_by": "finance-runtime",
     }
 
@@ -102,7 +125,7 @@ def test_approval_issues_persisted_signed_grant_without_plaintext(
 
     assert approval["decision_id"] == authorization["decision_id"]
     assert approval["status"] == "APPROVED"
-    assert token.startswith("rgt_exec_v1.")
+    assert token.startswith("dag_exec_v1.")
     assert str(parsed.grant_id) == approval["grant_id"]
     assert str(parsed.decision_id) == authorization["decision_id"]
     assert parsed.project_id == DEFAULT_PROJECT_ID
@@ -145,6 +168,45 @@ def test_execution_grant_is_consumed_exactly_once():
     assert replay.json()["detail"]["code"] == (
         "execution_grant_already_consumed"
     )
+
+
+def test_execution_grant_rejects_non_finite_context_without_consuming():
+    _, approval = authorize_and_approve()
+    body = consumption_payload(approval["execution_grant"])
+    body["context"]["amount"] = float("nan")
+
+    invalid = client.post(
+        "/v1/execution-grants/consume",
+        content=json.dumps(body),
+        headers={"Content-Type": "application/json"},
+    )
+    valid = client.post(
+        "/v1/execution-grants/consume",
+        json=consumption_payload(approval["execution_grant"]),
+    )
+
+    assert invalid.status_code == 422
+    assert valid.status_code == 200
+
+
+def test_reviewer_key_cannot_consume_execution_grant():
+    _, approval = authorize_and_approve()
+    body = consumption_payload(approval["execution_grant"])
+
+    forbidden = reviewer_client.post(
+        "/v1/execution-grants/consume",
+        json=body,
+    )
+    runtime = client.post(
+        "/v1/execution-grants/consume",
+        json=body,
+    )
+
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"]["code"] == (
+        "insufficient_api_key_role"
+    )
+    assert runtime.status_code == 200
 
 
 def test_concurrent_consumption_authorizes_only_one_request():
@@ -258,12 +320,12 @@ def test_execution_grant_is_project_scoped():
 def test_approve_retry_returns_same_active_grant():
     authorization, first = authorize_and_approve()
 
-    second = client.post(
+    second = reviewer_client.post(
         (
             "/v1/approvals/"
             f"{authorization['decision_id']}/approve"
         ),
-        json={"resolved_by": "security-reviewer"},
+        json={},
     )
 
     assert second.status_code == 200
@@ -281,8 +343,8 @@ def test_concurrent_approval_returns_one_idempotent_grant():
     def approve():
         return TestClient(app).post(
             url,
-            headers={"X-API-Key": TEST_API_KEY},
-            json={"resolved_by": "security-reviewer"},
+            headers={"X-API-Key": TEST_REVIEWER_API_KEY},
+            json={},
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -310,8 +372,8 @@ def test_concurrent_approve_and_reject_have_one_terminal_winner():
     def resolve(path: str):
         return TestClient(app).post(
             base_url + path,
-            headers={"X-API-Key": TEST_API_KEY},
-            json={"resolved_by": "security-reviewer"},
+            headers={"X-API-Key": TEST_REVIEWER_API_KEY},
+            json={},
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -396,9 +458,9 @@ def test_expired_pending_approval_cannot_issue_grant(
     read = client.get(
         f"/v1/approvals/{authorization['decision_id']}"
     )
-    approve = client.post(
+    approve = reviewer_client.post(
         f"/v1/approvals/{authorization['decision_id']}/approve",
-        json={"resolved_by": "late-reviewer"},
+        json={},
     )
 
     assert read.status_code == 200
@@ -418,13 +480,13 @@ def test_rejected_approval_never_issues_execution_grant(
         "/v1/authorize",
         json=AUTHORIZATION_REQUEST,
     ).json()
-    rejected = client.post(
+    rejected = reviewer_client.post(
         f"/v1/approvals/{authorization['decision_id']}/reject",
-        json={"resolved_by": "risk-reviewer"},
+        json={},
     )
-    approve = client.post(
+    approve = reviewer_client.post(
         f"/v1/approvals/{authorization['decision_id']}/approve",
-        json={"resolved_by": "security-reviewer"},
+        json={},
     )
 
     assert rejected.status_code == 200

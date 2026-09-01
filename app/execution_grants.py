@@ -11,7 +11,7 @@ from app.execution_models import (
     ExecutionGrantRecord,
 )
 
-EXECUTION_GRANT_PREFIX = "rgt_exec_v1"
+EXECUTION_GRANT_PREFIX = "dag_exec_v1"
 
 
 def _validate_secret(secret: str) -> bytes:
