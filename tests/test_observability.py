@@ -116,3 +116,67 @@ def test_json_log_formatter_reports_exception_type_not_message():
 
     assert payload["exception_type"] == "ValueError"
     assert "sensitive-value-must-not-be-logged" not in formatted
+
+
+def test_metrics_registry_groups_unknown_methods_with_bounded_storage():
+    registry = MetricsRegistry()
+    methods = [f"UNRECOGNIZED{index}" for index in range(256)]
+    methods.extend(["", "get", "GET ", "OTHER", "non-ascii-\u00e9"])
+
+    for method in methods:
+        registry.request_started()
+        registry.request_finished(
+            method=method,
+            route="/health",
+            status_code=405,
+            duration_seconds=0.25,
+        )
+
+    assert dict(registry._http_requests) == {
+        ("OTHER", "/health", "405"): len(methods),
+    }
+    assert set(registry._http_durations) == {("OTHER", "/health")}
+    histogram = registry._http_durations[("OTHER", "/health")]
+    assert histogram.count == len(methods)
+    assert histogram.total == len(methods) * 0.25
+    assert histogram.bucket_counts[-1] == len(methods)
+
+    rendered = registry.render_prometheus()
+    assert "UNRECOGNIZED" not in rendered
+    assert "non-ascii" not in rendered
+    assert (
+        'decaustrum_http_requests_total{method="OTHER",'
+        f'route="/health",status="405"}} {len(methods)}'
+    ) in rendered
+    assert "decaustrum_http_in_flight_requests 0" in rendered
+
+
+def test_metrics_registry_preserves_known_methods_and_statuses():
+    registry = MetricsRegistry()
+    methods = (
+        "GET", "HEAD", "POST", "PUT", "DELETE",
+        "CONNECT", "OPTIONS", "TRACE", "PATCH",
+    )
+
+    for method in methods:
+        for status in (200, 405):
+            registry.request_started()
+            registry.request_finished(
+                method=method,
+                route="/health",
+                status_code=status,
+                duration_seconds=0.25,
+            )
+
+    assert dict(registry._http_requests) == {
+        (method, "/health", str(status)): 1
+        for method in methods
+        for status in (200, 405)
+    }
+    assert set(registry._http_durations) == {
+        (method, "/health") for method in methods
+    }
+    for histogram in registry._http_durations.values():
+        assert histogram.count == 2
+        assert histogram.total == 0.5
+    assert 'method="OTHER"' not in registry.render_prometheus()

@@ -200,6 +200,11 @@ template and status, security events, and authorization decisions. It never
 labels metrics with API keys, project IDs, decision IDs, agents, actions,
 contexts, raw paths, or other unbounded tenant data.
 
+Method labels are limited to `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `CONNECT`,
+`OPTIONS`, `TRACE`, and `PATCH`. All other method values share the `OTHER`
+label, including on rejected requests. This grouping happens inside the
+metrics registry and does not change request routing.
+
 The metrics registry is in process memory. A restart resets counters, which is
 normal for Prometheus counters when each process is identified as a new target.
 With multiple processes, expose or aggregate one registry per process rather

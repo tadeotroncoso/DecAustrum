@@ -467,3 +467,76 @@ def test_production_application_does_not_expose_api_docs():
     assert client.get("/docs").status_code == 404
     assert client.get("/redoc").status_code == 404
     assert client.get("/openapi.json").status_code == 404
+
+
+def test_unknown_http_methods_do_not_grow_health_metrics():
+    application = create_app(build_settings(rate_limit_enabled=True))
+    client = TestClient(application)
+
+    try:
+        for index in range(40):
+            response = client.request(f"UNRECOGNIZED{index}", "/health")
+            assert response.status_code == 405
+
+        registry = application.state.metrics_registry
+        assert dict(registry._http_requests) == {
+            ("OTHER", "/health", "405"): 40,
+        }
+        assert set(registry._http_durations) == {("OTHER", "/health")}
+        assert registry._http_durations[("OTHER", "/health")].count == 40
+        assert "UNRECOGNIZED" not in registry.render_prometheus()
+
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+        assert registry._http_requests[("GET", "/health", "200")] == 1
+        assert len(registry._http_requests) == 2
+        assert len(registry._http_durations) == 2
+    finally:
+        client.close()
+
+
+def test_unknown_http_methods_are_grouped_on_early_rejection():
+    application = create_app(build_settings(rate_limit_enabled=True))
+    client = TestClient(application)
+
+    try:
+        for index in range(40):
+            response = client.request(
+                f"UNRECOGNIZED{index}",
+                f"/unmatched-{index}",
+                headers={"Host": "untrusted.example"},
+            )
+            assert response.status_code == 400
+            assert response.json()["detail"]["code"] == "invalid_host"
+
+        registry = application.state.metrics_registry
+        assert dict(registry._http_requests) == {
+            ("OTHER", "unmatched", "400"): 40,
+        }
+        assert set(registry._http_durations) == {("OTHER", "unmatched")}
+        rendered = registry.render_prometheus()
+        assert "UNRECOGNIZED" not in rendered
+        assert "/unmatched-" not in rendered
+    finally:
+        client.close()
+
+
+def test_metric_method_grouping_does_not_change_custom_method_routing():
+    application = create_app(build_settings())
+    application.add_api_route(
+        "/custom-method",
+        lambda: {"status": "custom-handler"},
+        methods=["CUSTOM"],
+    )
+    client = TestClient(application)
+
+    try:
+        response = client.request("CUSTOM", "/custom-method")
+        assert response.status_code == 200
+        assert response.json() == {"status": "custom-handler"}
+        assert dict(application.state.metrics_registry._http_requests) == {
+            ("OTHER", "/custom-method", "200"): 1,
+        }
+    finally:
+        client.close()

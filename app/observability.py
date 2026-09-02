@@ -8,6 +8,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 DECAUSTRUM_VERSION = "0.1.0"
+_METRIC_HTTP_METHODS = frozenset({
+    "GET",
+    "HEAD",
+    "POST",
+    "PUT",
+    "DELETE",
+    "CONNECT",
+    "OPTIONS",
+    "TRACE",
+    "PATCH",
+})
 HTTP_DURATION_BUCKETS = (
     0.005,
     0.01,
@@ -99,9 +110,11 @@ class MetricsRegistry:
         status_code: int,
         duration_seconds: float,
     ) -> None:
+        # Bound caller-controlled method labels at the storage boundary.
+        metric_method = method if method in _METRIC_HTTP_METHODS else "OTHER"
         status = str(status_code)
-        key = (method, route, status)
-        duration_key = (method, route)
+        key = (metric_method, route, status)
+        duration_key = (metric_method, route)
 
         with self._lock:
             self._in_flight = max(0, self._in_flight - 1)
