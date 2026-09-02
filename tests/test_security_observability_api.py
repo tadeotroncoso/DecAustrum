@@ -432,9 +432,9 @@ def test_authorization_decision_is_counted_without_tenant_labels(
         "/v1/authorize",
         headers={"X-API-Key": api_key},
         json={
-            "agent": "email-agent",
-            "action": "send_email",
-            "context": {"recipient": "user@example.com"},
+            "agent": "support-agent",
+            "action": "refund_payment",
+            "context": {"amount": 300},
         },
     )
     metrics = client.get(

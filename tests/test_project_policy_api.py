@@ -283,7 +283,11 @@ def test_disabling_policy_is_isolated_and_idempotent():
         750,
     )
 
-    assert first_authorization.json()["decision"] == "ALLOW"
+    assert first_authorization.json()["decision"] == "DENY"
+    assert first_authorization.json()["policy"] is None
+    assert first_authorization.json()["reason"] == (
+        "Action 'refund_payment' is not covered by an active policy."
+    )
     assert (
         second_authorization.json()["decision"]
         == "REQUIRE_APPROVAL"

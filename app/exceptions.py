@@ -80,6 +80,22 @@ class InvalidPolicyContextError(Exception):
             f"with operator '{operator}'."
         )
 
+
+class MissingPolicyContextError(Exception):
+    def __init__(
+        self,
+        field: str,
+        policy_id: str,
+    ) -> None:
+        self.field = field
+        self.policy_id = policy_id
+
+        super().__init__(
+            f"Context field '{field}' is required by policy "
+            f"'{policy_id}' and cannot be null."
+        )
+
+
 class DuplicatePolicyIdError(Exception):
     def __init__(self, policy_id: str) -> None:
         self.policy_id = policy_id

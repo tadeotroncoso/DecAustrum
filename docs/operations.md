@@ -126,12 +126,16 @@ wrapper might enrich with the plaintext grant.
 Before releasing an integration:
 
 1. Test `ALLOW`, `DENY`, and `REQUIRE_APPROVAL` separately.
-2. Assert the business callback is untouched for denied and pending requests.
-3. Test that changed agent, action, or context cannot use an issued grant.
-4. Test replay and expiry without retrying the side effect.
-5. Verify that a `RUNTIME` key cannot approve or reject and a `REVIEWER` key
+2. Verify that an action with no active policy is denied.
+3. Verify that missing or null fields required by applicable policies return
+   `missing_policy_context` and create no stored decision.
+4. Assert the business callback is untouched for denied, invalid, and pending
+   requests.
+5. Test that changed agent, action, or context cannot use an issued grant.
+6. Test replay and expiry without retrying the side effect.
+7. Verify that a `RUNTIME` key cannot approve or reject and a `REVIEWER` key
    cannot authorize or consume a grant.
-6. Run the example only against a local or non-production project and supply
+8. Run the example only against a local or non-production project and supply
    separate runtime and reviewer keys.
 
 The full usage and error contract is documented in `docs/sdk-python.md`.

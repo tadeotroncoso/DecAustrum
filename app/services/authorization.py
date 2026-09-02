@@ -10,7 +10,10 @@ from app.authorization_models import (
     AuthorizationResponse,
 )
 from app.evidence_store import EvidenceStore
-from app.exceptions import InvalidPolicyContextError
+from app.exceptions import (
+    InvalidPolicyContextError,
+    MissingPolicyContextError,
+)
 from app.idempotency import (
     IdempotencyRecord,
     build_request_fingerprint,
@@ -104,6 +107,16 @@ def authorize_request(
                 "message": str(exc),
                 "field": exc.field,
                 "operator": exc.operator,
+            },
+        ) from exc
+    except MissingPolicyContextError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "missing_policy_context",
+                "message": str(exc),
+                "field": exc.field,
+                "policy": exc.policy_id,
             },
         ) from exc
 

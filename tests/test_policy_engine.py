@@ -1,3 +1,6 @@
+import pytest
+
+from app.exceptions import MissingPolicyContextError
 from app.policy_engine import evaluate_policy
 
 
@@ -47,14 +50,65 @@ def test_large_bank_transfer_requires_approval():
     assert evaluation.policy_id == "large-transfer"
 
 
-def test_unknown_action_is_allowed():
+def test_unknown_action_is_denied():
     evaluation = evaluate_policy(
         "send_email",
         {"recipient": "test@example.com"},
     )
 
-    assert evaluation.decision == "ALLOW"
+    assert evaluation.decision == "DENY"
     assert evaluation.policy_id is None
+    assert evaluation.reason == (
+        "Action 'send_email' is not covered by an active policy."
+    )
+    assert evaluation.trace == []
+
+
+@pytest.mark.parametrize(
+    ("action", "context", "field", "policy_id"),
+    [
+        ("bank_transfer", {}, "amount", "large-transfer"),
+        (
+            "bank_transfer",
+            {"amount": 5000},
+            "account_verified",
+            "unverified-account",
+        ),
+        (
+            "bank_transfer",
+            {
+                "amount": 5000,
+                "account_verified": None,
+            },
+            "account_verified",
+            "unverified-account",
+        ),
+        ("refund_payment", {"amount": None}, "amount", "refund-limit"),
+        (
+            "export_customer_data",
+            {"record_count": 500},
+            "destination_region",
+            "high-risk-data-export",
+        ),
+        (
+            "access_customer_record",
+            {"classification": "restricted"},
+            "contains_personal_data",
+            "sensitive-record-access",
+        ),
+    ],
+)
+def test_missing_or_null_policy_context_is_rejected(
+    action,
+    context,
+    field,
+    policy_id,
+):
+    with pytest.raises(MissingPolicyContextError) as captured:
+        evaluate_policy(action, context)
+
+    assert captured.value.field == field
+    assert captured.value.policy_id == policy_id
 
 
 def test_unverified_account_is_denied():

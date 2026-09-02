@@ -54,6 +54,25 @@ characters. The key is scoped to the authenticated project.
 - An idempotent retry does not create a second decision, approval, integrity
   record, or webhook event.
 
+### Fail-closed authorization
+
+Authorization does not treat absent configuration or incomplete input as an
+implicit permission:
+
+- an action with no active policy for the authenticated project produces a
+  persisted `DENY` decision with no winning policy, no evidence, and an empty
+  trace;
+- for a covered action, every context field referenced by an applicable active
+  policy is required and must be non-null; and
+- a missing or null field returns `422` with code `missing_policy_context`
+  before a decision, approval, integrity entry, idempotency record, or webhook
+  event is written.
+
+A present value that is incompatible with its policy operator returns `422`
+with code `invalid_policy_context`. Once complete context is available, a
+covered action may still resolve to `ALLOW` when none of its restrictive policy
+conditions match.
+
 ### Pagination
 
 Collection endpoints use `limit` and `offset`:

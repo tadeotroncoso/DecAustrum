@@ -105,6 +105,10 @@ and the complete policy trace. The relevant fields are shown below:
 
 Repeating the same request with the same idempotency key returns the original
 decision. Reusing that key for a different request is rejected as a conflict.
+Actions with no active policy are denied and recorded with an empty trace.
+For a covered action, every context field referenced by an active policy is
+required and must be non-null; an incomplete context is rejected before any
+decision or idempotency record is stored.
 
 ## Engineering properties
 
@@ -115,9 +119,10 @@ decision. Reusing that key for a different request is rejected as a conflict.
 - **Separated project roles.** `RUNTIME` keys authorize and consume grants;
   `REVIEWER` keys approve or reject. Reviewer identity is derived from the
   authenticated key rather than accepted from request data.
-- **Deterministic policy evaluation.** Conditions support `all` and `any`
-  matching; `DENY` takes precedence over `REQUIRE_APPROVAL`, which takes
-  precedence over `ALLOW`.
+- **Fail-closed policy evaluation.** Actions without an active policy are
+  denied, and missing or null policy inputs are rejected before persistence.
+  Conditions support `all` and `any` matching; `DENY` takes precedence over
+  `REQUIRE_APPROVAL`, which takes precedence over `ALLOW`.
 - **Closed approval lifecycle.** Pending requests can be approved, rejected, or
   expired. Approved grants are short-lived, single-use, and request-bound.
 - **Immutable administrative history.** Policy versions and administrative

@@ -178,7 +178,7 @@ def test_authorize_returns_require_approval_with_winning_policy():
     assert data["policy_version"] == 1
 
 
-def test_authorize_returns_allow_without_policy():
+def test_authorize_allows_when_no_restrictive_policy_matches():
     response = client.post(
         "/v1/authorize",
         json={
@@ -201,6 +201,110 @@ def test_authorize_returns_allow_without_policy():
     )
     assert data["evidence"] is None
     assert data["policy_version"] is None
+
+
+def test_authorize_denies_action_without_active_policy(
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "email-agent",
+            "action": "send_email",
+            "context": {
+                "recipient": "test@example.com",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "DENY"
+    assert data["policy"] is None
+    assert data["policy_version"] is None
+    assert data["evidence"] is None
+    assert data["reason"] == (
+        "Action 'send_email' is not covered by an active policy."
+    )
+    assert data["trace"] == []
+
+    stored = temporary_evidence_store.get(
+        decision_id=UUID(data["decision_id"]),
+        project_id=DEFAULT_PROJECT_ID,
+    )
+    assert stored is not None
+    assert stored.decision == "DENY"
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        {"amount": 5000},
+        {
+            "amount": 5000,
+            "account_verified": None,
+        },
+    ],
+)
+def test_authorize_rejects_missing_or_null_policy_context(
+    context,
+    temporary_evidence_store,
+):
+    response = client.post(
+        "/v1/authorize",
+        json={
+            "agent": "finance-agent",
+            "action": "bank_transfer",
+            "context": context,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "missing_policy_context",
+        "message": (
+            "Context field 'account_verified' is required by policy "
+            "'unverified-account' and cannot be null."
+        ),
+        "field": "account_verified",
+        "policy": "unverified-account",
+    }
+    assert temporary_evidence_store.count(DEFAULT_PROJECT_ID) == 0
+
+
+def test_missing_context_does_not_reserve_idempotency_key(
+    temporary_evidence_store,
+):
+    headers = {"Idempotency-Key": "corrected-refund"}
+    invalid = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json={
+            "agent": "support-agent",
+            "action": "refund_payment",
+            "context": {},
+        },
+    )
+    assert invalid.status_code == 422
+    assert temporary_evidence_store.get_idempotency_record(
+        project_id=DEFAULT_PROJECT_ID,
+        idempotency_key="corrected-refund",
+    ) is None
+
+    corrected = client.post(
+        "/v1/authorize",
+        headers=headers,
+        json={
+            "agent": "support-agent",
+            "action": "refund_payment",
+            "context": {"amount": 300},
+        },
+    )
+
+    assert corrected.status_code == 200
+    assert corrected.json()["decision"] == "ALLOW"
+    assert temporary_evidence_store.count(DEFAULT_PROJECT_ID) == 1
+
 
 def test_authorize_rejects_request_without_agent():
     response = client.post(

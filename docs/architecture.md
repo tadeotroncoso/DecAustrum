@@ -74,10 +74,19 @@ several repositories.
 1. The authorization router authenticates a `RUNTIME` project key.
 2. The authorization service checks project-scoped idempotency.
 3. Active policies are loaded for that project only.
-4. The policy engine returns a structured evaluation and complete trace.
+4. The policy engine denies an action with no active policy. For a covered
+   action, it rejects missing or null fields referenced by any applicable
+   policy; otherwise it returns a structured evaluation and complete trace.
 5. The service creates the decision and, when required, a pending approval.
 6. Decision, integrity proof, approval, idempotency record, immutable webhook
    events, and matching delivery rows are persisted in one transaction.
+
+This ordering is fail-closed at both configuration and input boundaries.
+Uncovered actions remain auditable because their `DENY` result is persisted.
+Incomplete covered requests fail before the transaction is assembled, so they
+cannot create partial decision, idempotency, approval, integrity, or outbox
+state. A covered request with complete context may resolve to `ALLOW` when no
+restrictive condition matches.
 
 ## Closed approval and execution flow
 

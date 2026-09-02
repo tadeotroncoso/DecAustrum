@@ -79,7 +79,9 @@ different request raises `ConflictError`.
 
 `DecAustrumGuard` couples authorization to a zero-argument callback. The callback
 is not called after `DENY`, while approval is pending, or when grant validation
-or consumption fails.
+or consumption fails. This includes actions with no active project policy,
+which the API denies. Missing or null fields required by applicable policies
+raise `ValidationError`; the callback is not invoked and no decision is stored.
 
 ```python
 from decaustrum import (
@@ -188,7 +190,7 @@ All SDK exceptions inherit from `DecAustrumError`:
 | `AuthenticationError` | Invalid or unauthorized project key |
 | `NotFoundError` | Decision or approval not visible to this project |
 | `ConflictError` | Idempotency or lifecycle conflict, including grant replay |
-| `ValidationError` | Invalid request or incompatible policy context |
+| `ValidationError` | Invalid request, missing/null policy input, or incompatible policy context |
 | `RateLimitError` | Configured API rate exceeded; includes `retry_after` |
 | `ServerError` | DecAustrum returned a 5xx response |
 | `DecAustrumTransportError` | Connection or timeout failure |

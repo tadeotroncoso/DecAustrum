@@ -96,7 +96,7 @@ try {
     }
 
     & $detectSecretsHook `
-        --baseline $secretsBaseline `
+        --baseline ".secrets.baseline" `
         --no-verify `
         --exclude-files `
             '^\.(bandit-baseline\.json|secrets\.baseline)$' `

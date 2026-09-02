@@ -13,6 +13,7 @@ from decaustrum import (
     ConflictError,
     DecAustrumClient,
     DecAustrumGuard,
+    ValidationError,
 )
 from fastapi.testclient import TestClient
 
@@ -137,6 +138,53 @@ def test_sdk_blocks_denied_operation_against_real_api(sdk_environment):
         )
 
     assert captured.value.decision.policy == "unverified-account"
+    assert calls == 0
+
+
+def test_sdk_blocks_action_without_active_policy(sdk_environment):
+    sdk, _, _ = sdk_environment
+    guard = DecAustrumGuard(sdk)
+    calls = 0
+
+    def send_email() -> None:
+        nonlocal calls
+        calls += 1
+
+    with pytest.raises(ActionDeniedError) as captured:
+        guard.execute(
+            agent="email-agent",
+            action="send_email",
+            context={"recipient": "test@example.com"},
+            operation=send_email,
+        )
+
+    assert captured.value.decision.policy is None
+    assert captured.value.decision.reason == (
+        "Action 'send_email' is not covered by an active policy."
+    )
+    assert calls == 0
+
+
+def test_sdk_does_not_run_with_incomplete_policy_context(
+    sdk_environment,
+):
+    sdk, _, _ = sdk_environment
+    guard = DecAustrumGuard(sdk)
+    calls = 0
+
+    def refund() -> None:
+        nonlocal calls
+        calls += 1
+
+    with pytest.raises(ValidationError) as captured:
+        guard.execute(
+            agent="support-agent",
+            action="refund_payment",
+            context={},
+            operation=refund,
+        )
+
+    assert captured.value.code == "missing_policy_context"
     assert calls == 0
 
 

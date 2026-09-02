@@ -7,7 +7,10 @@ from app.decision_models import (
     PolicyEvidence,
     PolicyTraceEntry,
 )
-from app.exceptions import InvalidPolicyContextError
+from app.exceptions import (
+    InvalidPolicyContextError,
+    MissingPolicyContextError,
+)
 from app.operators import evaluate_operator
 from app.policy_loader import load_policies
 from app.policy_models import Policy
@@ -31,6 +34,24 @@ def evaluate_policy(
     if policies is None:
         policies = load_policies(POLICIES_DIRECTORY)
 
+    applicable_policies = [
+        policy
+        for policy in policies
+        if policy.action == action
+    ]
+
+    if not applicable_policies:
+        return PolicyEvaluation(
+            decision="DENY",
+            policy_id=None,
+            policy_version=None,
+            reason=(
+                f"Action '{action}' is not covered by an active policy."
+            ),
+            evidence=None,
+            trace=[],
+        )
+
     final_decision: Decision = "ALLOW"
     winning_policy_id = None
     winning_policy_version = None
@@ -38,10 +59,7 @@ def evaluate_policy(
     winning_evidence = None
     policy_trace = []
 
-    for policy in policies:
-        if action != policy.action:
-            continue
-
+    for policy in applicable_policies:
         condition_results = []
         condition_evidence = []
 
@@ -49,19 +67,22 @@ def evaluate_policy(
             actual_value = context.get(condition.field)
 
             if actual_value is None:
-                condition_matches = False
-            else:
-                try:
-                    condition_matches = evaluate_operator(
-                        condition.operator,
-                        actual_value,
-                        condition.value,
-                    )
-                except TypeError as exc:
-                    raise InvalidPolicyContextError(
-                        field=condition.field,
-                        operator=condition.operator,
-                    ) from exc
+                raise MissingPolicyContextError(
+                    field=condition.field,
+                    policy_id=policy.id,
+                )
+
+            try:
+                condition_matches = evaluate_operator(
+                    condition.operator,
+                    actual_value,
+                    condition.value,
+                )
+            except TypeError as exc:
+                raise InvalidPolicyContextError(
+                    field=condition.field,
+                    operator=condition.operator,
+                ) from exc
 
             condition_results.append(condition_matches)
 
