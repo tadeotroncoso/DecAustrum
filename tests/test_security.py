@@ -8,10 +8,12 @@ from fastapi import HTTPException
 from app.api_keys import ProjectApiKeyPrincipal, hash_api_key
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
+from app.runtime_config import RuntimeConfigurationError
 from app.security import (
     authenticate_admin,
     authenticate_project,
     get_configured_execution_grant_secret,
+    get_configured_webhook_master_secret,
     require_project_api_key_role,
 )
 
@@ -160,3 +162,69 @@ def test_execution_grant_secret_is_returned(monkeypatch):
     monkeypatch.setenv("DECAUSTRUM_EXECUTION_GRANT_SECRET", secret)
 
     assert get_configured_execution_grant_secret() == secret
+
+
+def test_webhook_master_secret_must_be_configured(monkeypatch):
+    monkeypatch.delenv("DECAUSTRUM_WEBHOOK_MASTER_SECRET", raising=False)
+
+    with pytest.raises(RuntimeError, match="must be configured"):
+        get_configured_webhook_master_secret()
+
+
+def test_webhook_master_secret_must_be_strong(monkeypatch):
+    monkeypatch.setenv("DECAUSTRUM_WEBHOOK_MASTER_SECRET", "short")
+
+    with pytest.raises(RuntimeConfigurationError, match="at least 32 bytes"):
+        get_configured_webhook_master_secret()
+
+
+@pytest.mark.parametrize(
+    "reused_environment_variable",
+    [
+        "DECAUSTRUM_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
+    ],
+)
+def test_webhook_master_secret_cannot_reuse_other_configured_secrets(
+    monkeypatch,
+    reused_environment_variable,
+):
+    shared_value = "s" * 32
+    monkeypatch.setenv("DECAUSTRUM_WEBHOOK_MASTER_SECRET", shared_value)
+    monkeypatch.setenv(reused_environment_variable, shared_value)
+
+    with pytest.raises(
+        RuntimeConfigurationError,
+        match="must be different",
+    ) as error:
+        get_configured_webhook_master_secret()
+
+    assert shared_value not in str(error.value)
+
+
+def test_standalone_worker_can_load_a_distinct_utf8_master_secret(monkeypatch):
+    for name in (
+        "DECAUSTRUM_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    master_secret = "é" * 16
+    monkeypatch.setenv("DECAUSTRUM_WEBHOOK_MASTER_SECRET", master_secret)
+
+    assert get_configured_webhook_master_secret() == master_secret
+
+
+def test_webhook_master_secret_is_revalidated_on_each_use(monkeypatch):
+    master_secret = "w" * 32
+    monkeypatch.setenv("DECAUSTRUM_WEBHOOK_MASTER_SECRET", master_secret)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", "p" * 32)
+    monkeypatch.setenv("DECAUSTRUM_ADMIN_API_KEY", "a" * 32)
+    monkeypatch.setenv("DECAUSTRUM_EXECUTION_GRANT_SECRET", "g" * 32)
+    assert get_configured_webhook_master_secret() == master_secret
+
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", master_secret)
+
+    with pytest.raises(RuntimeConfigurationError, match="must be different"):
+        get_configured_webhook_master_secret()

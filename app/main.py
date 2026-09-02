@@ -46,6 +46,7 @@ from app.runtime_config import RuntimeSettings
 from app.security import (
     ADMIN_API_KEY_ENVIRONMENT_VARIABLE,
     EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE,
+    WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE,
     get_configured_api_key,
 )
 
@@ -153,6 +154,9 @@ async def lifespan(application: FastAPI):
             ),
             execution_grant_secret=os.getenv(
                 EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE
+            ),
+            webhook_master_secret=os.getenv(
+                WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE
             ),
         )
         policy_templates = load_policies(POLICIES_DIRECTORY)

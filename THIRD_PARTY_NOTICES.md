@@ -40,6 +40,6 @@ development tools are not part of the DecAustrum runtime merely because they are
 listed in the development lock file.
 
 The runtime container derives from the pinned official
-`python:3.12.14-slim-bookworm` image. Python, Debian, certificate material, and
-operating-system packages in that image retain their own notices and license
-files; the DecAustrum license does not replace them.
+`python:3.12.14-alpine3.23` image. Python, Alpine Linux, musl, BusyBox, certificate
+material, and operating-system packages in that image remain subject to their
+own licenses and notices; the DecAustrum license does not replace them.

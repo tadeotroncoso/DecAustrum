@@ -12,7 +12,7 @@ security-critical configuration is missing or weak.
 | `DECAUSTRUM_ENVIRONMENT` | `development` | Set to `production`. |
 | `DECAUSTRUM_API_KEY` | No default | Required; at least 32 UTF-8 bytes. |
 | `DECAUSTRUM_ADMIN_API_KEY` | No default | Required; at least 32 bytes and different from the project key. |
-| `DECAUSTRUM_WEBHOOK_MASTER_SECRET` | No default | Required before provisioning or delivering webhooks; at least 32 bytes. |
+| `DECAUSTRUM_WEBHOOK_MASTER_SECRET` | No default | Required before provisioning or delivering webhooks; at least 32 UTF-8 bytes and different from project, administrator, and execution-grant secrets. When configured, production startup validates it. |
 | `DECAUSTRUM_EXECUTION_GRANT_SECRET` | No default | Required to approve or consume grants; at least 32 bytes. Production startup fails without it, and it must differ from project and administrator keys. |
 | `DECAUSTRUM_TRUSTED_HOSTS` | Local hosts and `testserver` | Required comma-separated exact hosts or controlled `*.example.com` patterns. `*` is rejected. |
 | `DECAUSTRUM_CORS_ALLOWED_ORIGINS` | Empty | Optional comma-separated exact HTTPS origins. `*` and origins containing paths or credentials are rejected. |
@@ -36,6 +36,40 @@ outside version control.
 Generate project, administrator, webhook, and execution-grant secrets
 independently. Store them in the deployment platform's secret manager rather
 than in command history, images, source files, logs, or monitoring labels.
+
+Webhooks may remain unconfigured when the feature is unused. A configured
+webhook master secret is checked during production API startup and again on
+every provisioning or delivery use, including the standalone worker. The
+worker rejects an invalid or reused master secret before opening storage.
+Reusing a project key or another signing secret for webhooks is not supported.
+
+## Project API-key rotation
+
+Changing `DECAUSTRUM_API_KEY` registers the configured key; it does **not**
+revoke a previous key. Bootstrap deliberately permits an overlap period so
+clients can migrate without an outage. The previous key remains valid until
+it is explicitly revoked through the administrative API.
+
+For a planned rotation:
+
+1. Record the previous key's `api_key_id` from
+   `GET /v1/admin/projects/{project_id}/api-keys`. These are paginated metadata,
+   not plaintext credentials.
+2. Create a replacement with
+   `POST /v1/admin/projects/{project_id}/api-keys`, preserving the intended
+   `RUNTIME` or `REVIEWER` role. Store the returned credential securely; it is
+   shown only when issued.
+3. Update the affected clients. If this is the default project's bootstrap
+   `RUNTIME` key, update `DECAUSTRUM_API_KEY` on the server and restart it too.
+   Confirm that the replacement authenticates before removing the old key.
+4. Call `DELETE /v1/admin/projects/{project_id}/api-keys/{api_key_id}` for the
+   previous key. Verify that it now returns `401` on authenticated routes while
+   the replacement still works. Rotation is complete only after this step.
+
+For a suspected leak, revoke the compromised key immediately, even if that
+interrupts clients, and then replace it. Changing an environment variable or
+restarting the server is not a substitute for revocation. Never put a revoked
+key back in the bootstrap configuration.
 
 ## HTTP security boundary
 
@@ -272,9 +306,13 @@ baseline. If a real credential ever reaches a commit, rotate or revoke it
 immediately; deleting it from the current tree or rewriting Git history does
 not make the credential safe.
 
-`Dockerfile` pins the complete official Python image reference, including its
-digest, installs only `requirements/runtime.lock`, runs as an unprivileged user,
-and probes `/health/ready`. `compose.yaml` starts the API and independent
+`Dockerfile` pins the official Python 3.12 Alpine 3.23 image by digest. It
+installs the hash-verified pip bootstrap and runtime locks using binary wheels
+only, runs as an unprivileged user, and probes `/health/ready`. Alpine uses
+musl rather than glibc, so base-image changes must preserve compatible wheels
+for native dependencies and pass the runtime smoke test. No compiler or
+unlocked operating-system package installation is added to the application
+image. `compose.yaml` starts the API and independent
 webhook worker from the same image and mounts one named SQLite data volume.
 The services have a read-only root filesystem, no Linux capabilities, and
 `no-new-privileges`; secrets remain runtime environment values and are not
@@ -285,7 +323,14 @@ deployment decision.
 GitHub Actions repeats the test, SDK-package, dependency, static-analysis, and
 secret gates on every push and pull request. It also runs CodeQL, rejects newly
 introduced high-severity dependencies in pull requests, validates Compose,
-scans source and the runtime image, starts the image, and waits for readiness.
+scans source and the runtime image, starts the image with a read-only root and
+dedicated data volume, and waits for its actual healthcheck to become healthy.
+The smoke test verifies the non-root identity, native Python dependencies,
+TLS certificate store, SQLite, a persisted authorization response, and a
+one-shot webhook worker run. The image gate rejects **all HIGH and CRITICAL
+findings, including vulnerabilities without a published fix**. Do not make a
+release green by enabling `ignore-unfixed` or silently excluding affected
+packages; update the pinned base and dependencies, then rebuild and rescan.
 Every job receives only its required `GITHUB_TOKEN` permissions, checkout does
 not persist credentials, and every external action is pinned to an immutable
 commit SHA. Dependabot proposes dependency, container, and action updates; an

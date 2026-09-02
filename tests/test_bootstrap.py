@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -92,7 +92,7 @@ def test_bootstrap_is_idempotent(tmp_path):
     assert api_key_count == 1
 
 
-def test_bootstrap_adds_rotated_key(
+def test_bootstrap_adds_new_key_without_revoking_previous_key(
     tmp_path,
 ):
     database_path = tmp_path / "test.db"
@@ -136,6 +136,45 @@ def test_bootstrap_adds_rotated_key(
         ).fetchone()[0]
 
     assert api_key_count == 2
+
+
+def test_explicit_revocation_completes_bootstrap_key_rotation(tmp_path):
+    store = EvidenceStore(tmp_path / "test.db")
+    store.initialize()
+    first_api_key = generate_project_api_key()
+    second_api_key = generate_project_api_key()
+    project = bootstrap_default_project(
+        store=store,
+        api_key=first_api_key,
+        created_at=BOOTSTRAP_TIME,
+    )
+    first_principal = store.get_active_api_key_principal_by_hash(
+        hash_api_key(first_api_key)
+    )
+    assert first_principal is not None
+    bootstrap_default_project(
+        store=store,
+        api_key=second_api_key,
+        created_at=BOOTSTRAP_TIME + timedelta(minutes=1),
+    )
+
+    store.revoke_project_api_key(
+        project_id=project.project_id,
+        api_key_id=first_principal.api_key_id,
+        revoked_at=BOOTSTRAP_TIME + timedelta(minutes=2),
+    )
+    bootstrap_default_project(
+        store=store,
+        api_key=second_api_key,
+        created_at=BOOTSTRAP_TIME + timedelta(minutes=3),
+    )
+
+    assert store.get_active_project_by_api_key_hash(
+        hash_api_key(first_api_key)
+    ) is None
+    assert store.get_active_project_by_api_key_hash(
+        hash_api_key(second_api_key)
+    ) == project
 
 
 def test_bootstrap_rejects_disabled_default_project(

@@ -45,7 +45,10 @@ jobs:
           python -m pip check
 
       - name: Validate POSIX automation
-        run: bash -n scripts/*.sh
+        run: |
+          for script in scripts/*.sh; do
+            sh -n "$script"
+          done
 
       - name: Audit dependencies, source, and secrets
         shell: bash
@@ -170,42 +173,105 @@ jobs:
       - name: Build pinned runtime image
         run: docker build --tag decaustrum-backend:ci .
 
-      - name: Scan runtime image for actionable vulnerabilities
+      - name: Reject high and critical runtime vulnerabilities, including unfixed
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: decaustrum-backend:ci
+          scanners: vuln
           format: table
           exit-code: '1'
-          ignore-unfixed: true
+          ignore-unfixed: false
           vuln-type: os,library
           severity: HIGH,CRITICAL
           version: v0.74.0
           skip-setup-trivy: true
 
-      - name: Start container and verify readiness
+      - name: Verify hardened runtime, authorization, and worker
         shell: bash
         run: |
           set -euo pipefail
-          container_name="decaustrum-smoke-${GITHUB_RUN_ID}"
+          container_name="decaustrum-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          volume_name="decaustrum-smoke-data-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() {
             docker rm --force "$container_name" >/dev/null 2>&1 || true
+            docker volume rm "$volume_name" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
+          docker volume create "$volume_name"
           docker run --detach \
             --name "$container_name" \
             --env-file .env \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:size=16m,mode=1777 \
+            --volume "$volume_name:/app/data" \
             --publish 127.0.0.1:8000:8000 \
             decaustrum-backend:ci
 
+          ready=false
           for attempt in $(seq 1 30); do
-            if curl --fail --silent \
-              http://127.0.0.1:8000/health/ready >/dev/null; then
-              exit 0
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' "$container_name")" = healthy ] \
+              && curl --fail --silent \
+                http://127.0.0.1:8000/health/ready >/dev/null; then
+              ready=true
+              break
             fi
             sleep 1
           done
 
-          docker logs "$container_name"
-          exit 1
+          if [ "$ready" != true ]; then
+            docker logs "$container_name"
+            exit 1
+          fi
+
+          docker exec "$container_name" python -m pip check
+          docker exec --interactive "$container_name" python - <<'PY'
+          import json
+          import os
+          import sqlite3
+          import ssl
+          import sys
+          from urllib.request import Request, urlopen
+
+          import pydantic_core
+          import yaml
+
+          assert sys.version_info[:2] == (3, 12)
+          assert os.geteuid() == 10001
+          assert pydantic_core.__version__
+          assert yaml.safe_load("ready: true") == {"ready": True}
+          assert ssl.create_default_context().get_ca_certs()
+          with sqlite3.connect(":memory:") as connection:
+              assert connection.execute("SELECT 1").fetchone() == (1,)
+
+          headers = {
+              "Content-Type": "application/json",
+              "X-API-Key": os.environ["DECAUSTRUM_API_KEY"],
+          }
+          request = Request(
+              "http://127.0.0.1:8000/v1/authorize",
+              data=json.dumps({
+                  "agent": "container-smoke",
+                  "action": "container_smoke_unconfigured_action",
+                  "context": {},
+              }).encode("utf-8"),
+              headers=headers,
+              method="POST",
+          )
+          with urlopen(request, timeout=5) as response:
+              decision = json.loads(response.read())
+          assert decision["decision"] == "DENY"
+          assert decision["policy"] is None
+
+          request = Request(
+              "http://127.0.0.1:8000/v1/decisions/" + decision["decision_id"],
+              headers=headers,
+          )
+          with urlopen(request, timeout=5) as response:
+              assert json.loads(response.read()) == decision
+          print("Non-root runtime, compiled dependencies, and authorization passed.")
+          PY
+          docker exec "$container_name" python -m app.webhook_worker --once

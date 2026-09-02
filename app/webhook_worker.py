@@ -99,16 +99,14 @@ def main() -> None:
     configure_json_logging(
         settings.log_level,
     )
-    store = EvidenceStore(DATABASE_PATH)
-    store.initialize()
-
     try:
+        master_secret = get_configured_webhook_master_secret()
+        store = EvidenceStore(DATABASE_PATH)
+        store.initialize()
         run_webhook_worker(
             store=store,
             transport=UrllibWebhookTransport(),
-            master_secret=(
-                get_configured_webhook_master_secret()
-            ),
+            master_secret=master_secret,
             batch_size=arguments.batch_size,
             poll_interval_seconds=arguments.poll_interval,
             once=arguments.once,

@@ -10,6 +10,35 @@ class RuntimeConfigurationError(RuntimeError):
     """Raised when DecAustrum runtime hardening is misconfigured."""
 
 
+def validate_webhook_master_secret(
+    secret: str,
+    *,
+    project_api_key: str | None = None,
+    admin_api_key: str | None = None,
+    execution_grant_secret: str | None = None,
+) -> None:
+    """Keep webhook signing material strong and separate from other roles."""
+    secret_bytes = secret.encode("utf-8")
+    if len(secret_bytes) < 32:
+        raise RuntimeConfigurationError(
+            "DECAUSTRUM_WEBHOOK_MASTER_SECRET must contain at least 32 bytes."
+        )
+
+    for other_secret in (
+        project_api_key,
+        admin_api_key,
+        execution_grant_secret,
+    ):
+        if other_secret is not None and secrets.compare_digest(
+            secret_bytes,
+            other_secret.encode("utf-8"),
+        ):
+            raise RuntimeConfigurationError(
+                "Webhook, execution grant, project, and administrator "
+                "secrets must be different."
+            )
+
+
 def _parse_bool(
     environment: Mapping[str, str],
     name: str,
@@ -341,6 +370,7 @@ class RuntimeSettings:
         project_api_key: str,
         admin_api_key: str | None,
         execution_grant_secret: str | None = None,
+        webhook_master_secret: str | None = None,
     ) -> None:
         if self.environment != "production":
             return
@@ -391,8 +421,17 @@ class RuntimeSettings:
                 "must be different."
             )
 
+        if webhook_master_secret is not None:
+            validate_webhook_master_secret(
+                webhook_master_secret,
+                project_api_key=project_api_key,
+                admin_api_key=admin_api_key,
+                execution_grant_secret=execution_grant_secret,
+            )
+
 
 __all__ = [
     "RuntimeConfigurationError",
     "RuntimeSettings",
+    "validate_webhook_master_secret",
 ]

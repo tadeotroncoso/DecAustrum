@@ -1,6 +1,10 @@
 import asyncio
+from unittest.mock import Mock
+
+import pytest
 
 import app.main as main_module
+from app.runtime_config import RuntimeConfigurationError, RuntimeSettings
 
 
 def test_lifespan_initializes_application(
@@ -101,3 +105,47 @@ def test_lifespan_initializes_application(
         ),
         "running",
     ]
+
+
+@pytest.mark.parametrize(
+    "reused_environment_variable",
+    [
+        "DECAUSTRUM_API_KEY",
+        "DECAUSTRUM_ADMIN_API_KEY",
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET",
+    ],
+)
+def test_production_startup_rejects_reused_webhook_secret_before_storage(
+    monkeypatch,
+    reused_environment_variable,
+):
+    configured_values = {
+        "DECAUSTRUM_API_KEY": "p" * 32,
+        "DECAUSTRUM_ADMIN_API_KEY": "a" * 32,
+        "DECAUSTRUM_EXECUTION_GRANT_SECRET": "g" * 32,
+    }
+    for name, value in configured_values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(
+        "DECAUSTRUM_WEBHOOK_MASTER_SECRET",
+        configured_values[reused_environment_variable],
+    )
+    initialize = Mock()
+    monkeypatch.setattr(main_module.evidence_store, "initialize", initialize)
+    application = main_module.create_app(
+        RuntimeSettings.from_environment(
+            {
+                "DECAUSTRUM_ENVIRONMENT": "production",
+                "DECAUSTRUM_TRUSTED_HOSTS": "api.example.com",
+            }
+        )
+    )
+
+    async def run_lifespan():
+        async with main_module.lifespan(application):
+            pytest.fail("Production startup must reject reused secrets")
+
+    with pytest.raises(RuntimeConfigurationError, match="must be different"):
+        asyncio.run(run_lifespan())
+
+    initialize.assert_not_called()

@@ -1,3 +1,6 @@
+import sys
+from unittest.mock import Mock
+
 import pytest
 
 import app.webhook_worker as worker_module
@@ -65,3 +68,23 @@ def test_worker_rejects_invalid_operational_settings(
             poll_interval_seconds=poll_interval,
             once=True,
         )
+
+
+def test_worker_rejects_reused_master_secret_before_opening_storage(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["decaustrum-webhook-worker", "--once"])
+    monkeypatch.setenv("DECAUSTRUM_ENVIRONMENT", "test")
+    monkeypatch.setenv("DECAUSTRUM_TRUSTED_HOSTS", "localhost")
+    monkeypatch.setenv("DECAUSTRUM_WEBHOOK_MASTER_SECRET", "s" * 32)
+    monkeypatch.setenv("DECAUSTRUM_API_KEY", "s" * 32)
+    store_factory = Mock()
+    dispatch = Mock()
+    monkeypatch.setattr(worker_module, "EvidenceStore", store_factory)
+    monkeypatch.setattr(worker_module, "run_webhook_worker", dispatch)
+    monkeypatch.setattr(worker_module, "configure_json_logging", Mock())
+
+    with pytest.raises(SystemExit) as error:
+        worker_module.main()
+
+    assert error.value.code == 1
+    store_factory.assert_not_called()
+    dispatch.assert_not_called()

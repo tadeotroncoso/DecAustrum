@@ -139,3 +139,20 @@ def test_delivery_paths_preserve_legal_files():
         '"$repository_root/sdk/python/THIRD_PARTY_NOTICES.md"'
         in shell_check
     )
+
+
+def test_container_notices_match_the_pinned_base_image():
+    dockerfile = (REPOSITORY_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    notices = (REPOSITORY_ROOT / "THIRD_PARTY_NOTICES.md").read_text(
+        encoding="utf-8"
+    )
+    base_reference = next(
+        line.removeprefix("FROM ").split("@", 1)[0]
+        for line in dockerfile.splitlines()
+        if line.startswith("FROM ")
+    )
+
+    assert f"`{base_reference}`" in notices
+    assert "Alpine Linux" in notices
+    assert "musl" in notices
+    assert "BusyBox" in notices

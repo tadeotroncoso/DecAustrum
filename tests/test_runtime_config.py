@@ -178,7 +178,58 @@ def test_production_accepts_distinct_strong_secrets():
         project_api_key="project-" + "p" * 32,
         admin_api_key="admin-" + "a" * 32,
         execution_grant_secret="grant-" + "g" * 32,
+        webhook_master_secret="w" * 32,
     )
+
+
+def test_production_does_not_require_unused_webhook_configuration():
+    settings = RuntimeSettings.from_environment(
+        {
+            "DECAUSTRUM_ENVIRONMENT": "production",
+            "DECAUSTRUM_TRUSTED_HOSTS": "api.example.com",
+        }
+    )
+
+    settings.validate_secrets(
+        project_api_key="p" * 32,
+        admin_api_key="a" * 32,
+        execution_grant_secret="g" * 32,
+        webhook_master_secret=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid_case",
+    ["empty", "short", "project", "admin", "execution"],
+)
+def test_production_rejects_weak_or_reused_webhook_master_secret(
+    invalid_case,
+):
+    settings = RuntimeSettings.from_environment(
+        {
+            "DECAUSTRUM_ENVIRONMENT": "production",
+            "DECAUSTRUM_TRUSTED_HOSTS": "api.example.com",
+        }
+    )
+    invalid_values = {
+        "empty": "",
+        "short": "short",
+        "project": "p" * 32,
+        "admin": "a" * 32,
+        "execution": "g" * 32,
+    }
+
+    with pytest.raises(RuntimeConfigurationError) as error:
+        settings.validate_secrets(
+            project_api_key="p" * 32,
+            admin_api_key="a" * 32,
+            execution_grant_secret="g" * 32,
+            webhook_master_secret=invalid_values[invalid_case],
+        )
+
+    assert "p" * 32 not in str(error.value)
+    assert "a" * 32 not in str(error.value)
+    assert "g" * 32 not in str(error.value)
 
 
 @pytest.mark.parametrize(

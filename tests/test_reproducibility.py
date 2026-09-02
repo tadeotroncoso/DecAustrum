@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 import tomllib
@@ -200,7 +201,7 @@ def test_container_is_pinned_and_runs_without_root():
     )
 
     assert re.fullmatch(
-        r"FROM python:3\.12\.14-slim-bookworm@sha256:[0-9a-f]{64}",
+        r"FROM python:3\.12\.14-alpine3\.23@sha256:[0-9a-f]{64}",
         first_from,
     )
     assert "# syntax=docker/dockerfile" not in dockerfile
@@ -209,6 +210,11 @@ def test_container_is_pinned_and_runs_without_root():
         in dockerfile
     )
     assert "USER 10001:10001" in dockerfile
+    assert "addgroup -S -g 10001" in dockerfile
+    assert "adduser -S -D -H -u 10001" in dockerfile
+    assert "-s /sbin/nologin" in dockerfile
+    assert "chmod 0700 /app/data" in dockerfile
+    assert dockerfile.count("--only-binary=:all:") == 2
     assert "HEALTHCHECK" in dockerfile
     assert '"--no-access-log"' in dockerfile
 
@@ -272,7 +278,8 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert "--cov-branch" in workflow_text
     assert "python -m ruff check" in workflow_text
     assert "python -m mypy" in workflow_text
-    assert "bash -n scripts/*.sh" in workflow_text
+    assert "for script in scripts/*.sh; do" in workflow_text
+    assert 'sh -n "$script"' in workflow_text
     assert "python -m pip_audit" in workflow_text
     assert "requirements/bootstrap.lock" in workflow_text
     assert "python -m bandit" in workflow_text
@@ -287,6 +294,66 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert "docker compose config --quiet" in workflow_text
     assert "docker build --tag decaustrum-backend:ci ." in workflow_text
     assert "/health/ready" in workflow_text
+
+
+def test_image_security_gate_rejects_unfixed_high_and_critical_findings():
+    workflow = yaml.load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    job = workflow["jobs"]["container-smoke-test"]
+    image_scans = [
+        step
+        for step in job["steps"]
+        if step.get("with", {}).get("scan-type") == "image"
+    ]
+    assert len(image_scans) == 1
+    step = image_scans[0]
+    options = step["with"]
+    assert options["ignore-unfixed"] == "false"
+    assert options["scanners"] == "vuln"
+    assert options["exit-code"] == "1"
+    assert set(options["severity"].split(",")) == {"HIGH", "CRITICAL"}
+    assert set(options["vuln-type"].split(",")) == {"os", "library"}
+    assert step.get("continue-on-error", "false") == "false"
+    assert job.get("continue-on-error", "false") == "false"
+
+
+def test_container_smoke_covers_native_runtime_storage_and_worker():
+    workflow = yaml.load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["container-smoke-test"]["steps"]
+        if step["name"] == "Verify hardened runtime, authorization, and worker"
+    )
+    smoke = step["run"]
+    for required in (
+        "--read-only",
+        "--cap-drop ALL",
+        "--security-opt no-new-privileges:true",
+        '"$volume_name:/app/data"',
+        ".State.Health.Status",
+        "os.geteuid() == 10001",
+        "import pydantic_core",
+        "import yaml",
+        "ssl.create_default_context().get_ca_certs()",
+        "sqlite3.connect",
+        "/v1/authorize",
+        "/v1/decisions/",
+        "python -m pip check",
+        "python -m app.webhook_worker --once",
+    ):
+        assert required in smoke
+    assert "exit 0" not in smoke
+    python_probe = smoke.split("python - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    ast.parse(python_probe)
 
 
 def test_docker_context_excludes_secrets_state_and_development_files():

@@ -11,6 +11,7 @@ from app.api_keys import (
 )
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
+from app.runtime_config import validate_webhook_master_secret
 
 API_KEY_ENVIRONMENT_VARIABLE = "DECAUSTRUM_API_KEY"
 ADMIN_API_KEY_ENVIRONMENT_VARIABLE = (
@@ -77,11 +78,14 @@ def get_configured_webhook_master_secret() -> str:
             "must be configured to provision or deliver webhooks."
         )
 
-    if len(secret.encode("utf-8")) < 32:
-        raise RuntimeError(
-            f"{WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE} "
-            "must contain at least 32 bytes."
-        )
+    validate_webhook_master_secret(
+        secret,
+        project_api_key=os.getenv(API_KEY_ENVIRONMENT_VARIABLE),
+        admin_api_key=os.getenv(ADMIN_API_KEY_ENVIRONMENT_VARIABLE),
+        execution_grant_secret=os.getenv(
+            EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE
+        ),
+    )
 
     return secret
 

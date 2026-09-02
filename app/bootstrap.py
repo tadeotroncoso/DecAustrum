@@ -21,6 +21,11 @@ def bootstrap_default_project(
     *,
     created_at: datetime | None = None,
 ) -> Project:
+    """Register the configured key without revoking other project keys.
+
+    Rotation is complete only after the previous key is explicitly revoked
+    through the administrative API. This preserves intentional key overlap.
+    """
     key_hash = hash_api_key(api_key)
 
     authenticated_project = (
