@@ -1,1 +1,1 @@
--r requirements/dev.lock
+-r requirements/dev.txt

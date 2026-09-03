@@ -101,13 +101,35 @@ def test_python_and_backend_versions_are_single_line_pins():
     ]
 
 
+@pytest.mark.parametrize("name", ["bootstrap", "runtime", "dev"])
+def test_pip_compile_locks_use_dependabot_compatible_names(name):
+    manifest = REQUIREMENTS / f"{name}.in"
+    lock = manifest.with_suffix(".txt")
+
+    assert manifest.is_file()
+    assert lock.is_file()
+    assert lock.stat().st_size <= 500_000
+    assert not manifest.with_suffix(".lock").exists()
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "name"),
+    [("requirements.txt", "runtime"), ("requirements-dev.txt", "dev")],
+)
+def test_requirement_entrypoints_reference_existing_text_locks(entrypoint, name):
+    content = (REPOSITORY_ROOT / entrypoint).read_text(encoding="utf-8")
+
+    assert content.strip() == f"-r requirements/{name}.txt"
+    assert (REQUIREMENTS / f"{name}.txt").is_file()
+
+
 def test_runtime_inputs_metadata_and_lock_are_synchronized():
     direct = project_dependencies()
     runtime_input = parse_pinned_requirements(
         REQUIREMENTS / "runtime.in"
     )
     runtime_lock = parse_pinned_requirements(
-        REQUIREMENTS / "runtime.lock"
+        REQUIREMENTS / "runtime.txt"
     )
 
     assert runtime_input == direct
@@ -116,7 +138,7 @@ def test_runtime_inputs_metadata_and_lock_are_synchronized():
 
 def test_runtime_lock_does_not_require_package_installers():
     runtime_lock = parse_pinned_requirements(
-        REQUIREMENTS / "runtime.lock"
+        REQUIREMENTS / "runtime.txt"
     )
 
     assert {"pip", "setuptools", "wheel"}.isdisjoint(runtime_lock)
@@ -127,7 +149,7 @@ def test_development_input_is_covered_by_lock():
         REQUIREMENTS / "dev.in"
     )
     development_lock = parse_pinned_requirements(
-        REQUIREMENTS / "dev.lock"
+        REQUIREMENTS / "dev.txt"
     )
 
     assert development_input.items() <= development_lock.items()
@@ -135,7 +157,7 @@ def test_development_input_is_covered_by_lock():
         REQUIREMENTS / "dev.in"
     ).read_text(encoding="utf-8")
     runtime_lock = parse_pinned_requirements(
-        REQUIREMENTS / "runtime.lock"
+        REQUIREMENTS / "runtime.txt"
     )
     assert runtime_lock.items() <= development_lock.items()
     assert {
@@ -153,9 +175,9 @@ def test_development_input_is_covered_by_lock():
 
 def test_lock_files_contain_reviewable_sha256_hashes():
     for lock_name in (
-        "bootstrap.lock",
-        "runtime.lock",
-        "dev.lock",
+        "bootstrap.txt",
+        "runtime.txt",
+        "dev.txt",
     ):
         lock_path = REQUIREMENTS / lock_name
         locked = parse_pinned_requirements(lock_path)
@@ -170,7 +192,7 @@ def test_pip_bootstrap_is_pinned_and_hash_verified_everywhere():
         REQUIREMENTS / "bootstrap.in"
     ) == {"pip": "26.2.1"}
     assert parse_pinned_requirements(
-        REQUIREMENTS / "bootstrap.lock"
+        REQUIREMENTS / "bootstrap.txt"
     ) == {"pip": "26.2.1"}
 
     paths = [
@@ -182,7 +204,7 @@ def test_pip_bootstrap_is_pinned_and_hash_verified_everywhere():
 
     for path in paths:
         content = path.read_text(encoding="utf-8")
-        assert "requirements/bootstrap.lock" in content.replace(
+        assert "requirements/bootstrap.txt" in content.replace(
             "\\", "/"
         )
         assert "pip install --upgrade pip==" not in content
@@ -216,7 +238,7 @@ def test_container_is_pinned_and_runs_without_root():
     )
     assert "# syntax=docker/dockerfile" not in dockerfile
     assert (
-        "COPY requirements/bootstrap.lock requirements/runtime.lock"
+        "COPY requirements/bootstrap.txt requirements/runtime.txt"
         in dockerfile
     )
     assert "USER 10001:10001" in dockerfile
@@ -244,8 +266,8 @@ def test_container_validates_dependencies_before_removing_installers():
     ]
 
     assert len(commands) == 5
-    assert "requirements/bootstrap.lock" in commands[0]
-    assert "requirements/runtime.lock" in commands[1]
+    assert "requirements/bootstrap.txt" in commands[0]
+    assert "requirements/runtime.txt" in commands[1]
     assert commands[2:] == [
         "python -m pip check",
         "python -m pip uninstall --yes pip",
@@ -315,7 +337,7 @@ def test_ci_actions_are_immutable_and_cover_tests_packages_and_image():
     assert "for script in scripts/*.sh; do" in workflow_text
     assert 'sh -n "$script"' in workflow_text
     assert "python -m pip_audit" in workflow_text
-    assert "requirements/bootstrap.lock" in workflow_text
+    assert "requirements/bootstrap.txt" in workflow_text
     assert "python -m bandit" in workflow_text
     assert "detect-secrets-hook" in workflow_text
     assert "validate_secrets_baseline.py" in workflow_text
@@ -478,7 +500,10 @@ def test_docker_context_excludes_secrets_state_and_development_files():
         .splitlines()
     )
 
-    assert {".env", ".git", ".venv", "data", "tests", "sdk"} <= ignored
+    assert {
+        ".env", ".git", ".venv", "data", "tests", "sdk",
+        "requirements/dev.in", "requirements/dev.txt",
+    } <= ignored
 
 
 def test_local_scripts_use_the_same_locks_and_environment_file():
@@ -497,9 +522,9 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
     for path in bootstrap_files:
         content = path.read_text(encoding="utf-8")
         assert "requirements" in content
-        assert "bootstrap.lock" in content
-        assert "dev.lock" in content
-        assert "runtime.lock" in content
+        assert "bootstrap.txt" in content
+        assert "dev.txt" in content
+        assert "runtime.txt" in content
 
     powershell_bootstrap = bootstrap_files[0].read_text(
         encoding="utf-8"
@@ -530,6 +555,7 @@ def test_local_scripts_use_the_same_locks_and_environment_file():
     ]:
         content = path.read_text(encoding="utf-8")
         assert "pip_audit" in content
+        assert "requirements/dev.txt" in content.replace("\\", "/")
         assert "--require-hashes" in content
         assert "bandit" in content
         assert "detect-secrets-hook" in content

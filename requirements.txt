@@ -1,1 +1,1 @@
--r requirements/runtime.lock
+-r requirements/runtime.txt

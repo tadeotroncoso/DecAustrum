@@ -20,7 +20,7 @@ cd "$repository_root"
 "$virtual_python" "$baseline_validator" "$secrets_baseline"
 
 "$virtual_python" -m pip_audit \
-    --requirement requirements/dev.lock \
+    --requirement requirements/dev.txt \
     --require-hashes \
     --disable-pip \
     --progress-spinner off

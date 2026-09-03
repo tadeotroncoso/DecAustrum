@@ -101,7 +101,7 @@ def test_third_party_notices_cover_distributed_python_dependencies():
         for name in re.findall(r"^\| `([^`]+)` \|", notice_text, re.M)
     }
     required_names = locked_requirement_names(
-        REPOSITORY_ROOT / "requirements" / "runtime.lock"
+        REPOSITORY_ROOT / "requirements" / "runtime.txt"
     ) | {
         "httpx",
         "httpcore",

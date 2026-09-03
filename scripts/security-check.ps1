@@ -49,7 +49,7 @@ try {
         -Operation "Secret baseline review"
 
     & $virtualPython -m pip_audit `
-        --requirement "requirements\dev.lock" `
+        --requirement "requirements\dev.txt" `
         --require-hashes `
         --disable-pip `
         --progress-spinner off

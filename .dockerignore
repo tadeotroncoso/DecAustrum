@@ -14,4 +14,4 @@ sdk
 tests
 scripts
 requirements/dev.in
-requirements/dev.lock
+requirements/dev.txt

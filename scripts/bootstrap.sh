@@ -25,12 +25,12 @@ fi
     --require-hashes \
     --no-deps \
     --only-binary=:all: \
-    --requirement "$repository_root/requirements/bootstrap.lock"
+    --requirement "$repository_root/requirements/bootstrap.txt"
 
 if [ "${1:-}" = "--runtime" ]; then
-    lock_file="$repository_root/requirements/runtime.lock"
+    lock_file="$repository_root/requirements/runtime.txt"
 else
-    lock_file="$repository_root/requirements/dev.lock"
+    lock_file="$repository_root/requirements/dev.txt"
 fi
 
 "$virtual_python" -m pip install \

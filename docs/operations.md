@@ -261,14 +261,20 @@ the repository layer.
 DecAustrum has one declared Python minor version and two dependency sets:
 
 - `.python-version` pins the developer and CI interpreter;
-- `requirements/bootstrap.lock` pins the pip wheel and verifies its SHA-256
+- `requirements/bootstrap.txt` pins the pip wheel and verifies its SHA-256
   hash before upgrading the environment installer;
-- `requirements/runtime.lock` is the exact API and worker dependency graph,
+- `requirements/runtime.txt` is the exact API and worker dependency graph,
   including SHA-256 hashes for every accepted distribution artifact;
-- `requirements/dev.lock` contains that graph plus the exact test, packaging,
+- `requirements/dev.txt` contains that graph plus the exact test, packaging,
   lint, type-checking, coverage, and local security tools, also with hashes;
 - `requirements/*.in` and `pyproject.toml` document the corresponding direct
   dependencies.
+
+The generated lock files use `.txt` names paired with their `.in` inputs so
+Dependabot can discover and update them. `requirements.txt` and
+`requirements-dev.txt` include the runtime and development locks respectively.
+Keep the exact versions and hashes in these files; `.txt` is the requirements
+format, not permission to use unpinned dependencies.
 
 Use `scripts/bootstrap.ps1` on Windows or `scripts/bootstrap.sh` on POSIX to
 create `.venv` from those files. Both scripts reject an incompatible Python
@@ -353,7 +359,7 @@ When intentionally updating dependencies:
 
 1. change the direct version in the matching `.in` file and `pyproject.toml`;
 2. resolve the complete exact graph with `pip-compile --generate-hashes` and
-   review the matching `.lock` file;
+   review the matching `.txt` lock file;
 3. keep runtime versions identical wherever they appear;
 4. rebuild from a new virtual environment and run the release gate;
 5. for a base-image or GitHub Action update, record an immutable digest or

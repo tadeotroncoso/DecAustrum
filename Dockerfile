@@ -11,15 +11,15 @@ RUN addgroup -S -g 10001 decaustrum \
     && adduser -S -D -H -u 10001 -G decaustrum \
         -h /nonexistent -s /sbin/nologin decaustrum
 
-COPY requirements/bootstrap.lock requirements/runtime.lock ./requirements/
+COPY requirements/bootstrap.txt requirements/runtime.txt ./requirements/
 
 # Check dependencies before removing pip, its vendored libraries, and its bootstrap.
 RUN python -m pip install --upgrade --require-hashes --no-deps \
         --only-binary=:all: \
-        --requirement requirements/bootstrap.lock \
+        --requirement requirements/bootstrap.txt \
     && python -m pip install --require-hashes --no-deps \
         --only-binary=:all: \
-        --requirement requirements/runtime.lock \
+        --requirement requirements/runtime.txt \
     && python -m pip check \
     && python -m pip uninstall --yes pip \
     && rm -r /usr/local/lib/python3.12/ensurepip

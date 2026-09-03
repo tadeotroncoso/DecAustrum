@@ -65,7 +65,7 @@ if ($virtualPythonMinor -ne "3.12") {
 
 $bootstrapLock = Join-Path (
     $repositoryRoot
-) "requirements\bootstrap.lock"
+) "requirements\bootstrap.txt"
 
 & $virtualPython -m pip install `
     --upgrade `
@@ -78,9 +78,9 @@ Assert-NativeCommandSucceeded `
     -Operation "pip installation"
 
 $lockFile = if ($RuntimeOnly) {
-    Join-Path $repositoryRoot "requirements\runtime.lock"
+    Join-Path $repositoryRoot "requirements\runtime.txt"
 } else {
-    Join-Path $repositoryRoot "requirements\dev.lock"
+    Join-Path $repositoryRoot "requirements\dev.txt"
 }
 
 & $virtualPython -m pip install `
