@@ -3,7 +3,9 @@ import json
 import re
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 import yaml
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
@@ -112,6 +114,14 @@ def test_runtime_inputs_metadata_and_lock_are_synchronized():
     assert direct.items() <= runtime_lock.items()
 
 
+def test_runtime_lock_does_not_require_package_installers():
+    runtime_lock = parse_pinned_requirements(
+        REQUIREMENTS / "runtime.lock"
+    )
+
+    assert {"pip", "setuptools", "wheel"}.isdisjoint(runtime_lock)
+
+
 def test_development_input_is_covered_by_lock():
     development_input = parse_pinned_requirements(
         REQUIREMENTS / "dev.in"
@@ -217,6 +227,30 @@ def test_container_is_pinned_and_runs_without_root():
     assert dockerfile.count("--only-binary=:all:") == 2
     assert "HEALTHCHECK" in dockerfile
     assert '"--no-access-log"' in dockerfile
+
+
+def test_container_validates_dependencies_before_removing_installers():
+    dockerfile = (REPOSITORY_ROOT / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    instructions = dockerfile.replace("\\\n", " ").splitlines()
+    installation = next(
+        line for line in instructions
+        if line.startswith("RUN python -m pip install ")
+    )
+    commands = [
+        command.strip()
+        for command in installation.removeprefix("RUN ").split("&&")
+    ]
+
+    assert len(commands) == 5
+    assert "requirements/bootstrap.lock" in commands[0]
+    assert "requirements/runtime.lock" in commands[1]
+    assert commands[2:] == [
+        "python -m pip check",
+        "python -m pip uninstall --yes pip",
+        "rm -r /usr/local/lib/python3.12/ensurepip",
+    ]
 
 
 def test_compose_defines_hardened_api_worker_and_persistent_data():
@@ -347,13 +381,94 @@ def test_container_smoke_covers_native_runtime_storage_and_worker():
         "sqlite3.connect",
         "/v1/authorize",
         "/v1/decisions/",
-        "python -m pip check",
         "python -m app.webhook_worker --once",
     ):
         assert required in smoke
     assert "exit 0" not in smoke
+    assert "python -m pip check" not in smoke
     python_probe = smoke.split("python - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    ast.parse(python_probe)
+    tree = ast.parse(python_probe)
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "verify_runtime_installers_absent"
+        for node in ast.walk(tree)
+    )
+
+
+def build_runtime_installer_check(
+    *,
+    module=None,
+    distribution=None,
+    executable=None,
+):
+    workflow = yaml.load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    smoke = next(
+        step["run"]
+        for step in workflow["jobs"]["container-smoke-test"]["steps"]
+        if step["name"] == "Verify hardened runtime, authorization, and worker"
+    )
+    python_probe = smoke.split("python - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    function = next(
+        node for node in ast.parse(python_probe).body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "verify_runtime_installers_absent"
+    )
+    names = ["fastapi", "pydantic", "uvicorn", "PyYAML"]
+    if distribution is not None:
+        names.append(distribution)
+    namespace = {
+        "find_spec": lambda name: object() if name == module else None,
+        "distributions": lambda: [
+            SimpleNamespace(metadata={"Name": name}) for name in names
+        ],
+        "which": lambda name: (
+            f"/usr/local/bin/{name}" if name == executable else None
+        ),
+    }
+    # Run only the CI installer check, not its container or HTTP probes.
+    exec(
+        compile(
+            ast.Module(body=[function], type_ignores=[]),
+            "ci-runtime-installer-check",
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace["verify_runtime_installers_absent"]
+
+
+def test_container_installer_check_accepts_an_installer_free_runtime():
+    build_runtime_installer_check()()
+
+
+@pytest.mark.parametrize("module", ["pip", "ensurepip", "setuptools", "wheel"])
+def test_container_installer_check_rejects_installer_modules(module):
+    check = build_runtime_installer_check(module=module)
+
+    with pytest.raises(AssertionError, match="Unexpected installer module"):
+        check()
+
+
+@pytest.mark.parametrize("distribution", ["Pip", "Setuptools", "Wheel"])
+def test_container_installer_check_rejects_leftover_metadata(distribution):
+    check = build_runtime_installer_check(distribution=distribution)
+
+    with pytest.raises(AssertionError, match="Unexpected installer distribution"):
+        check()
+
+
+@pytest.mark.parametrize("executable", ["pip", "pip3", "pip3.12"])
+def test_container_installer_check_rejects_leftover_commands(executable):
+    check = build_runtime_installer_check(executable=executable)
+
+    with pytest.raises(AssertionError, match="Unexpected installer command"):
+        check()
 
 
 def test_docker_context_excludes_secrets_state_and_development_files():

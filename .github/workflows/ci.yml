@@ -227,18 +227,32 @@ jobs:
             exit 1
           fi
 
-          docker exec "$container_name" python -m pip check
           docker exec --interactive "$container_name" python - <<'PY'
           import json
           import os
           import sqlite3
           import ssl
           import sys
+          from importlib.metadata import distributions
+          from importlib.util import find_spec
+          from shutil import which
           from urllib.request import Request, urlopen
 
           import pydantic_core
           import yaml
 
+          def verify_runtime_installers_absent():
+              for name in ("pip", "ensurepip", "setuptools", "wheel"):
+                  assert find_spec(name) is None, f"Unexpected installer module: {name}"
+              for distribution in distributions():
+                  name = distribution.metadata["Name"].lower().replace("_", "-")
+                  assert name not in {"pip", "setuptools", "wheel"}, (
+                      f"Unexpected installer distribution: {name}"
+                  )
+              for name in ("pip", "pip3", "pip3.12"):
+                  assert which(name) is None, f"Unexpected installer command: {name}"
+
+          verify_runtime_installers_absent()
           assert sys.version_info[:2] == (3, 12)
           assert os.geteuid() == 10001
           assert pydantic_core.__version__

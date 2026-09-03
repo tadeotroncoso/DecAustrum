@@ -313,7 +313,14 @@ not make the credential safe.
 
 `Dockerfile` pins the official Python 3.12 Alpine 3.23 image by digest. It
 installs the hash-verified pip bootstrap and runtime locks using binary wheels
-only, runs as an unprivileged user, and probes `/health/ready`. Alpine uses
+only, checks the installed dependencies with `pip check`, then uninstalls pip
+and removes `ensurepip`, including its bundled installer wheel, in the same
+build step. The final runtime contains neither pip's vendored dependencies nor
+package installation tools. Dependency changes require rebuilding the image;
+do not install packages into a running container. Local development and SDK
+builds retain their own packaging tools.
+
+The image runs as an unprivileged user and probes `/health/ready`. Alpine uses
 musl rather than glibc, so base-image changes must preserve compatible wheels
 for native dependencies and pass the runtime smoke test. No compiler or
 unlocked operating-system package installation is added to the application
@@ -330,8 +337,9 @@ secret gates on every push and pull request. It also runs CodeQL, rejects newly
 introduced high-severity dependencies in pull requests, validates Compose,
 scans source and the runtime image, starts the image with a read-only root and
 dedicated data volume, and waits for its actual healthcheck to become healthy.
-The smoke test verifies the non-root identity, native Python dependencies,
-TLS certificate store, SQLite, a persisted authorization response, and a
+The smoke test rejects installer modules, leftover installer metadata, and pip
+commands in the final image. It verifies the non-root identity, native Python
+dependencies, TLS certificate store, SQLite, a persisted authorization response, and a
 one-shot webhook worker run. The image gate rejects **all HIGH and CRITICAL
 findings, including vulnerabilities without a published fix**. Do not make a
 release green by enabling `ignore-unfixed` or silently excluding affected

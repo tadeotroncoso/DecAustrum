@@ -13,12 +13,16 @@ RUN addgroup -S -g 10001 decaustrum \
 
 COPY requirements/bootstrap.lock requirements/runtime.lock ./requirements/
 
+# Check dependencies before removing pip, its vendored libraries, and its bootstrap.
 RUN python -m pip install --upgrade --require-hashes --no-deps \
         --only-binary=:all: \
         --requirement requirements/bootstrap.lock \
     && python -m pip install --require-hashes --no-deps \
         --only-binary=:all: \
-        --requirement requirements/runtime.lock
+        --requirement requirements/runtime.lock \
+    && python -m pip check \
+    && python -m pip uninstall --yes pip \
+    && rm -r /usr/local/lib/python3.12/ensurepip
 
 COPY --chown=10001:10001 LICENSE THIRD_PARTY_NOTICES.md ./
 COPY --chown=10001:10001 app ./app
