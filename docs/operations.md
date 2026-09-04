@@ -378,8 +378,14 @@ and scans every publishable file for secrets.
 Known test credentials, examples, and secret-setting names are stored only as
 reviewed fingerprints in the secret baseline; any changed or new value blocks
 the gate. The baseline validator also rejects every unreviewed entry and every
-entry confirmed as a real secret. Verification probes are disabled so
-candidate values never leave the machine. Ruff checks imports and high-signal
+entry confirmed as a real secret. Its diagnostics use one-based file-entry and
+finding positions in the baseline, never filenames, supplied field values, or
+raw exception text. Inspect the baseline locally to locate a reported position.
+If `line_number` is present, it must be a positive integer; omission remains
+supported for slim baselines. Invalid UTF-8, malformed JSON, and unreadable files
+fail with controlled messages. Command-line usage errors do not echo arguments.
+Verification probes are disabled so candidate values never leave the machine.
+Ruff checks imports and high-signal
 correctness rules, mypy checks the backend, SDK, and Python scripts, and pytest
 enforces an 88.0% combined line-and-branch coverage floor. The gate then builds
 the Python SDK wheel in a temporary directory. The backend's deployable
