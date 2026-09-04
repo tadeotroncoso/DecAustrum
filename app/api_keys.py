@@ -71,6 +71,7 @@ class ProjectApiKeyProvisioningResponse(BaseModel):
 
 
 def generate_project_api_key() -> str:
+    """Issue a bearer token with 256 random bits, not a user-chosen password."""
     return (
         API_KEY_MARKER
         + secrets.token_urlsafe(32)
@@ -78,6 +79,12 @@ def generate_project_api_key() -> str:
 
 
 def hash_api_key(api_key: str) -> str:
+    """Index high-entropy API tokens; this is not a password hashing API.
+
+    Production provisioning uses generate_project_api_key exclusively. Legacy
+    manually configured keys remain readable for explicit rotation/revocation;
+    production startup must never enroll another caller-selected secret.
+    """
     if not api_key:
         raise ValueError("API key cannot be empty.")
 

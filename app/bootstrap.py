@@ -21,8 +21,9 @@ def bootstrap_default_project(
     *,
     created_at: datetime | None = None,
 ) -> Project:
-    """Register the configured key without revoking other project keys.
+    """Register a local development/test key, never a production credential.
 
+    Production startup must use administrative, random-key provisioning instead.
     Rotation is complete only after the previous key is explicitly revoked
     through the administrative API. This preserves intentional key overlap.
     """

@@ -193,8 +193,8 @@ fingerprints.
 The recorded actions are project creation and status changes, API-key creation
 and revocation, policy creation, update, disable and rollback, approval
 resolution or expiry, and execution-grant issuance, consumption, or expiry.
-Initial project templates and default-project bootstrap operations are
-attributed to `decaustrum-bootstrap` as a `SYSTEM` actor.
+Initial project templates and development/test default-project bootstrap
+operations are attributed to `decaustrum-bootstrap` as a `SYSTEM` actor.
 
 Administrative API clients can identify the operator with `X-Admin-Actor` and
 provide a ticket or explanation with `X-Audit-Reason`. Existing clients remain
@@ -212,6 +212,15 @@ SQLite transaction; an audit insert failure rolls back the domain mutation.
 API-key audit snapshots use public metadata only. Raw keys and key hashes are
 never included. SQLite foreign keys preserve project ownership, and triggers
 reject every `UPDATE` or `DELETE` against audit rows.
+
+Production startup does not bootstrap a configured project credential and rejects
+`DECAUSTRUM_API_KEY` in the server environment. The administrative provisioning
+service issues all new production project keys with 32 cryptographically random
+bytes. SHA-256 is an indexed token digest, not a human-password verifier. Existing
+database keys remain compatible, including legacy manual keys until explicitly
+rotated and revoked; restarting never reactivates a revoked key. Development/test
+bootstrap is for isolated synthetic environments only. See the production
+provisioning and upgrade contract in `docs/operations.md`.
 
 The administrator-only API supports paginated global or project-scoped
 listing, exact event retrieval, and filters for action, resource, actor, and

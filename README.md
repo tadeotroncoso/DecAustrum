@@ -146,6 +146,11 @@ use pinned dependency locks with SHA-256 hashes.
 The values in `.env.example` are placeholders for local development. Do not
 reuse them in a shared or production environment.
 
+Production servers must leave `DECAUSTRUM_API_KEY` unset. Create the first
+project through the authenticated administrative API, which issues a random
+project key. SDK clients still use `DECAUSTRUM_API_KEY` for their issued key.
+See [production provisioning and upgrade steps](docs/operations.md#production-project-provisioning).
+
 ### Windows PowerShell
 
 ```powershell
