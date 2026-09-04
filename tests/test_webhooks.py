@@ -1,5 +1,6 @@
 import json
 import socket
+import ssl
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -317,7 +318,10 @@ def test_real_transport_pins_validated_ip_preserves_tls_host_and_redirect(
             pass
 
     class FakeTlsContext:
+        minimum_version = None
+
         def wrap_socket(self, raw_socket, *, server_hostname):
+            assert self.minimum_version == ssl.TLSVersion.TLSv1_2
             tls_hostnames.append(server_hostname)
             return raw_socket
 
@@ -377,6 +381,65 @@ def test_real_transport_pins_validated_ip_preserves_tls_host_and_redirect(
             {"Content-Type": "application/json"},
         )
     ]
+
+
+@pytest.mark.parametrize("fail_first_address", [False, True])
+def test_real_transport_preserves_verified_tls_context_on_each_attempt(
+    monkeypatch,
+    fail_first_address,
+):
+    contexts = []
+    attempted_addresses = []
+
+    def open_connection(*, hostname, port, address, timeout_seconds, tls_context):
+        assert hostname == "hooks.example.com"
+        assert port == 443
+        assert timeout_seconds == 2.5
+        assert isinstance(tls_context, ssl.SSLContext)
+        assert tls_context.minimum_version == ssl.TLSVersion.TLSv1_2
+        assert tls_context.verify_mode == ssl.CERT_REQUIRED
+        assert tls_context.check_hostname is True
+        assert tls_context.maximum_version == ssl.TLSVersion.MAXIMUM_SUPPORTED
+        contexts.append(tls_context)
+        attempted_addresses.append(address.socket_address)
+
+        if fail_first_address and len(contexts) == 1:
+            raise OSError("Simulated connection failure.")
+
+        return SimpleNamespace(
+            request=lambda **_kwargs: None,
+            getresponse=lambda: SimpleNamespace(status=204),
+            close=lambda: None,
+        )
+
+    monkeypatch.setattr(
+        webhook_module.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            address_info("8.8.8.8"),
+            address_info("1.1.1.1"),
+        ],
+    )
+    monkeypatch.setattr(
+        webhook_module,
+        "_open_pinned_https_connection",
+        open_connection,
+    )
+
+    response = UrllibWebhookTransport().send(
+        url="https://hooks.example.com/decaustrum",
+        body=b"{}",
+        headers={},
+        timeout_seconds=2.5,
+    )
+
+    expected_addresses = [("8.8.8.8", 443)]
+    if fail_first_address:
+        expected_addresses.append(("1.1.1.1", 443))
+
+    assert response.status_code == 204
+    assert attempted_addresses == expected_addresses
+    assert all(context is contexts[0] for context in contexts)
 
 
 def test_real_transport_rejects_private_resolution_before_connecting(
