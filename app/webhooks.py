@@ -385,6 +385,7 @@ class UrllibWebhookTransport:
             request_target += "?" + parsed.query
 
         tls_context = ssl.create_default_context()
+        tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
         last_error: BaseException | None = None
 
         for address in addresses:
