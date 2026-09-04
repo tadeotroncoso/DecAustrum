@@ -155,7 +155,7 @@ def test_cli_accepts_valid_and_slim_baselines_without_echoing_contents(
     )
     assert main([str(path)]) == 0
     output = capsys.readouterr()
-    assert output.out == "Secret baseline review passed (1 reviewed false positives).\n"
+    assert output.out == "Secret baseline review passed.\n"
     assert output.err == ""
 
 

@@ -126,12 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     try:
-        finding_count = validate_secrets_baseline(arguments.baseline)
+        validate_secrets_baseline(arguments.baseline)
     except SecretsBaselineValidationError as exc:
         print(f"Secret baseline review failed: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Secret baseline review passed ({finding_count} reviewed false positives).")
+    print("Secret baseline review passed.")
     return 0
 
 
