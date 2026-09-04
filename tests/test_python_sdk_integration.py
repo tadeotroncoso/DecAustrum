@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from app.api_keys import (
     ProjectApiKeyRecord,
+    generate_project_api_key,
     get_api_key_prefix,
     hash_api_key,
 )
@@ -29,8 +30,8 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
-TEST_API_KEY = "python-sdk-project-key"
-TEST_REVIEWER_API_KEY = "python-sdk-reviewer-key"
+TEST_API_KEY = generate_project_api_key()
+TEST_REVIEWER_API_KEY = generate_project_api_key()
 TEST_REVIEWER_API_KEY_ID = UUID(
     "ff990241-4ab0-46ce-bd6b-655c5fcd5df8"
 )

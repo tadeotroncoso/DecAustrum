@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from app.api_keys import generate_project_api_key
 from app.bootstrap import bootstrap_default_project
 from app.dependencies import get_evidence_store
 from app.evidence_store import EvidenceStore
@@ -413,7 +414,7 @@ def test_authorization_decision_is_counted_without_tenant_labels(
     tmp_path,
     monkeypatch,
 ):
-    api_key = "tenant-observability-key"
+    api_key = generate_project_api_key()
     admin_key = "admin-observability-key"
     monkeypatch.setenv("DECAUSTRUM_ADMIN_API_KEY", admin_key)
     store = EvidenceStore(tmp_path / "decaustrum.db")

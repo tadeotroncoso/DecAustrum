@@ -5,7 +5,6 @@ import pytest
 
 from app.api_keys import (
     generate_project_api_key,
-    hash_api_key,
 )
 from app.bootstrap import (
     DEFAULT_PROJECT_ID,
@@ -45,14 +44,14 @@ def test_bootstrap_creates_default_project_and_key(
     assert project.created_at == BOOTSTRAP_TIME
 
     authenticated_project = (
-        store.get_active_project_by_api_key_hash(
-            hash_api_key(api_key)
+        store.get_active_project_by_api_key(
+            api_key
         )
     )
 
     assert authenticated_project == project
-    principal = store.get_active_api_key_principal_by_hash(
-        hash_api_key(api_key)
+    principal = store.get_active_api_key_principal(
+        api_key
     )
     assert principal is not None
     assert principal.role == "RUNTIME"
@@ -117,15 +116,15 @@ def test_bootstrap_adds_new_key_without_revoking_previous_key(
     assert rotated_project == project
 
     assert (
-        store.get_active_project_by_api_key_hash(
-            hash_api_key(first_api_key)
+        store.get_active_project_by_api_key(
+            first_api_key
         )
         == project
     )
 
     assert (
-        store.get_active_project_by_api_key_hash(
-            hash_api_key(second_api_key)
+        store.get_active_project_by_api_key(
+            second_api_key
         )
         == project
     )
@@ -148,8 +147,8 @@ def test_explicit_revocation_completes_bootstrap_key_rotation(tmp_path):
         api_key=first_api_key,
         created_at=BOOTSTRAP_TIME,
     )
-    first_principal = store.get_active_api_key_principal_by_hash(
-        hash_api_key(first_api_key)
+    first_principal = store.get_active_api_key_principal(
+        first_api_key
     )
     assert first_principal is not None
     bootstrap_default_project(
@@ -169,11 +168,11 @@ def test_explicit_revocation_completes_bootstrap_key_rotation(tmp_path):
         created_at=BOOTSTRAP_TIME + timedelta(minutes=3),
     )
 
-    assert store.get_active_project_by_api_key_hash(
-        hash_api_key(first_api_key)
+    assert store.get_active_project_by_api_key(
+        first_api_key
     ) is None
-    assert store.get_active_project_by_api_key_hash(
-        hash_api_key(second_api_key)
+    assert store.get_active_project_by_api_key(
+        second_api_key
     ) == project
 
 

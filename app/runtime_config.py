@@ -367,7 +367,7 @@ class RuntimeSettings:
     def validate_secrets(
         self,
         *,
-        project_api_key: str,
+        project_api_key: str | None,
         admin_api_key: str | None,
         execution_grant_secret: str | None = None,
         webhook_master_secret: str | None = None,
@@ -375,10 +375,11 @@ class RuntimeSettings:
         if self.environment != "production":
             return
 
-        if len(project_api_key.encode("utf-8")) < 32:
+        if project_api_key is not None:
             raise RuntimeConfigurationError(
-                "DECAUSTRUM_API_KEY must contain at least 32 bytes in "
-                "production."
+                "DECAUSTRUM_API_KEY must be unset on the production server. "
+                "Provision project keys through the authenticated admin API; "
+                "existing database keys remain valid until revoked."
             )
 
         if admin_api_key is None:
@@ -390,11 +391,6 @@ class RuntimeSettings:
             raise RuntimeConfigurationError(
                 "DECAUSTRUM_ADMIN_API_KEY must contain at least 32 bytes "
                 "in production."
-            )
-
-        if secrets.compare_digest(project_api_key, admin_api_key):
-            raise RuntimeConfigurationError(
-                "Project and administrator API keys must be different."
             )
 
         if execution_grant_secret is None:
@@ -411,14 +407,10 @@ class RuntimeSettings:
 
         if secrets.compare_digest(
             execution_grant_secret,
-            project_api_key,
-        ) or secrets.compare_digest(
-            execution_grant_secret,
             admin_api_key,
         ):
             raise RuntimeConfigurationError(
-                "Execution grant, project, and administrator secrets "
-                "must be different."
+                "Execution grant and administrator secrets must be different."
             )
 
         if webhook_master_secret is not None:

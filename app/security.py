@@ -7,7 +7,7 @@ from fastapi.security import APIKeyHeader
 from app.api_keys import (
     ProjectApiKeyPrincipal,
     ProjectApiKeyRole,
-    hash_api_key,
+    get_api_key_prefix,
 )
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
@@ -50,6 +50,13 @@ def get_configured_api_key() -> str:
             f"{API_KEY_ENVIRONMENT_VARIABLE} must be configured."
         )
 
+    try:
+        get_api_key_prefix(api_key)
+    except ValueError:
+        raise RuntimeError(
+            f"{API_KEY_ENVIRONMENT_VARIABLE} must use a newly generated "
+            "project API key; legacy keys are no longer supported."
+        ) from None
     return api_key
 
 
@@ -154,11 +161,9 @@ def authenticate_project_api_key(
             },
         )
 
-    key_hash = hash_api_key(provided_api_key)
-
     principal = (
-        store.get_active_api_key_principal_by_hash(
-            key_hash
+        store.get_active_api_key_principal(
+            provided_api_key
         )
     )
 

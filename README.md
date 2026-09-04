@@ -146,11 +146,18 @@ use pinned dependency locks with SHA-256 hashes.
 The values in `.env.example` are placeholders for local development. Do not
 reuse them in a shared or production environment.
 
+Production servers must leave `DECAUSTRUM_API_KEY` unset. Create the first
+project through the authenticated administrative API, which issues a random
+project key. SDK clients still use `DECAUSTRUM_API_KEY` for their issued key.
+See [production provisioning and upgrade steps](docs/operations.md#production-project-provisioning).
+
 ### Windows PowerShell
 
 ```powershell
 Copy-Item .env.example .env
 powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
+.\.venv\Scripts\python.exe -c "from app.api_keys import generate_project_api_key; print(generate_project_api_key())"
+# Put the printed key in DECAUSTRUM_API_KEY in .env before starting the API.
 .\scripts\run-api.ps1
 ```
 
@@ -166,6 +173,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 `
 ```bash
 cp .env.example .env
 sh ./scripts/bootstrap.sh
+.venv/bin/python -c 'from app.api_keys import generate_project_api_key; print(generate_project_api_key())'
+# Put the printed key in DECAUSTRUM_API_KEY in .env before starting the API.
 sh ./scripts/run-api.sh
 ```
 
@@ -189,7 +198,9 @@ sh ./scripts/run-worker.sh
 
 ### Docker Compose
 
-After copying `.env.example` to `.env`:
+After copying `.env.example` to `.env`, generate a local project key using
+`app.api_keys.generate_project_api_key()` as shown above and put it in
+`DECAUSTRUM_API_KEY`. Replace the other secret placeholders too. Then:
 
 ```console
 docker compose up --build

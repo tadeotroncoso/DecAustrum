@@ -101,8 +101,10 @@ def build_project() -> Project:
 
 def build_project_api_key(
     project_id: UUID,
+    *,
+    secret: str | None = None,
 ) -> ProjectApiKeyRecord:
-    secret = generate_project_api_key()
+    secret = secret or generate_project_api_key()
 
     return ProjectApiKeyRecord(
         api_key_id=uuid4(),
@@ -1341,7 +1343,8 @@ def test_revoke_project_api_key_is_idempotent(
     store.initialize()
 
     project = build_project()
-    api_key = build_project_api_key(project.project_id)
+    secret = generate_project_api_key()
+    api_key = build_project_api_key(project.project_id, secret=secret)
 
     store.save_project(project)
     store.save_project_api_key(api_key)
@@ -1364,8 +1367,8 @@ def test_revoke_project_api_key_is_idempotent(
     assert first_result.revoked_at == revoked_at
     assert second_result == first_result
 
-    assert store.get_active_project_by_api_key_hash(
-        api_key.key_hash
+    assert store.get_active_project_by_api_key(
+        secret
     ) is None
 
 
@@ -1377,8 +1380,9 @@ def test_revoke_project_api_key_is_scoped_to_project(
 
     first_project = build_project()
     second_project = build_project()
+    secret = generate_project_api_key()
     api_key = build_project_api_key(
-        first_project.project_id
+        first_project.project_id, secret=secret
     )
 
     store.save_project(first_project)
@@ -1392,8 +1396,8 @@ def test_revoke_project_api_key_is_scoped_to_project(
     )
 
     assert result is None
-    assert store.get_active_project_by_api_key_hash(
-        api_key.key_hash
+    assert store.get_active_project_by_api_key(
+        secret
     ) == first_project
 
 
@@ -1418,16 +1422,17 @@ def test_api_key_hash_returns_active_project(
     store.initialize()
 
     project = build_project()
+    secret = generate_project_api_key()
     api_key = build_project_api_key(
-        project.project_id
+        project.project_id, secret=secret
     )
 
     store.save_project(project)
     store.save_project_api_key(api_key)
 
     loaded_project = (
-        store.get_active_project_by_api_key_hash(
-            api_key.key_hash
+        store.get_active_project_by_api_key(
+            secret
         )
     )
 
@@ -1440,14 +1445,15 @@ def test_api_key_hash_returns_authenticated_role_principal(
     store = EvidenceStore(tmp_path / "test.db")
     store.initialize()
     project = build_project()
+    secret = generate_project_api_key()
     api_key = build_project_api_key(
-        project.project_id
+        project.project_id, secret=secret
     ).model_copy(update={"role": "REVIEWER"})
     store.save_project(project)
     store.save_project_api_key(api_key)
 
-    principal = store.get_active_api_key_principal_by_hash(
-        api_key.key_hash
+    principal = store.get_active_api_key_principal(
+        secret
     )
 
     assert principal is not None
@@ -1464,8 +1470,9 @@ def test_revoked_api_key_does_not_return_project(
     store.initialize()
 
     project = build_project()
+    secret = generate_project_api_key()
     api_key = build_project_api_key(
-        project.project_id
+        project.project_id, secret=secret
     ).model_copy(
         update={
             "revoked_at": datetime(
@@ -1483,8 +1490,8 @@ def test_revoked_api_key_does_not_return_project(
     store.save_project_api_key(api_key)
 
     loaded_project = (
-        store.get_active_project_by_api_key_hash(
-            api_key.key_hash
+        store.get_active_project_by_api_key(
+            secret
         )
     )
 
@@ -1502,16 +1509,17 @@ def test_disabled_project_is_not_authenticated(
         update={"status": "DISABLED"}
     )
 
+    secret = generate_project_api_key()
     api_key = build_project_api_key(
-        project.project_id
+        project.project_id, secret=secret
     )
 
     store.save_project(project)
     store.save_project_api_key(api_key)
 
     loaded_project = (
-        store.get_active_project_by_api_key_hash(
-            api_key.key_hash
+        store.get_active_project_by_api_key(
+            secret
         )
     )
 
@@ -1526,8 +1534,9 @@ def test_save_project_with_api_key_persists_both(
     store.initialize()
 
     project = build_project()
+    secret = generate_project_api_key()
     api_key = build_project_api_key(
-        project.project_id
+        project.project_id, secret=secret
     )
 
     store.save_project_with_api_key(
@@ -1540,8 +1549,8 @@ def test_save_project_with_api_key_persists_both(
     ) == project
 
     assert (
-        store.get_active_project_by_api_key_hash(
-            api_key.key_hash
+        store.get_active_project_by_api_key(
+            secret
         )
         == project
     )

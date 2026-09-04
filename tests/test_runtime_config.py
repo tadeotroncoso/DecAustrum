@@ -142,8 +142,8 @@ def test_runtime_settings_allow_local_http_cors_in_development():
     ("project_key", "admin_key"),
     [
         ("short", "a" * 32),
-        ("p" * 32, None),
-        ("p" * 32, "short"),
+        (None, None),
+        (None, "short"),
         ("same-secret" * 4, "same-secret" * 4),
     ],
 )
@@ -166,7 +166,7 @@ def test_production_rejects_weak_or_reused_secrets(
         )
 
 
-def test_production_accepts_distinct_strong_secrets():
+def test_production_accepts_distinct_server_secrets_without_project_key():
     settings = RuntimeSettings(
         environment="production",
         trusted_hosts=("api.example.com",),
@@ -175,7 +175,7 @@ def test_production_accepts_distinct_strong_secrets():
     )
 
     settings.validate_secrets(
-        project_api_key="project-" + "p" * 32,
+        project_api_key=None,
         admin_api_key="admin-" + "a" * 32,
         execution_grant_secret="grant-" + "g" * 32,
         webhook_master_secret="w" * 32,
@@ -191,7 +191,7 @@ def test_production_does_not_require_unused_webhook_configuration():
     )
 
     settings.validate_secrets(
-        project_api_key="p" * 32,
+        project_api_key=None,
         admin_api_key="a" * 32,
         execution_grant_secret="g" * 32,
         webhook_master_secret=None,
@@ -200,7 +200,7 @@ def test_production_does_not_require_unused_webhook_configuration():
 
 @pytest.mark.parametrize(
     "invalid_case",
-    ["empty", "short", "project", "admin", "execution"],
+    ["empty", "short", "admin", "execution"],
 )
 def test_production_rejects_weak_or_reused_webhook_master_secret(
     invalid_case,
@@ -214,14 +214,13 @@ def test_production_rejects_weak_or_reused_webhook_master_secret(
     invalid_values = {
         "empty": "",
         "short": "short",
-        "project": "p" * 32,
         "admin": "a" * 32,
         "execution": "g" * 32,
     }
 
     with pytest.raises(RuntimeConfigurationError) as error:
         settings.validate_secrets(
-            project_api_key="p" * 32,
+            project_api_key=None,
             admin_api_key="a" * 32,
             execution_grant_secret="g" * 32,
             webhook_master_secret=invalid_values[invalid_case],
@@ -256,16 +255,29 @@ def test_production_requires_strong_distinct_execution_secret():
 
     with pytest.raises(RuntimeConfigurationError):
         settings.validate_secrets(
-            project_api_key="project-" + "p" * 32,
+            project_api_key=None,
             admin_api_key="admin-" + "a" * 32,
             execution_grant_secret="short",
         )
 
-    project_secret = "project-" + "p" * 32
+    admin_secret = "admin-" + "a" * 32
 
     with pytest.raises(RuntimeConfigurationError, match="must be different"):
         settings.validate_secrets(
-            project_api_key=project_secret,
-            admin_api_key="admin-" + "a" * 32,
-            execution_grant_secret=project_secret,
+            project_api_key=None,
+            admin_api_key=admin_secret,
+            execution_grant_secret=admin_secret,
+        )
+
+
+def test_production_requires_execution_secret_when_no_project_key_is_set():
+    settings = RuntimeSettings.from_environment({
+        "DECAUSTRUM_ENVIRONMENT": "production",
+        "DECAUSTRUM_TRUSTED_HOSTS": "api.example.com",
+    })
+    with pytest.raises(RuntimeConfigurationError, match="must be configured"):
+        settings.validate_secrets(
+            project_api_key=None,
+            admin_api_key="a" * 32,
+            execution_grant_secret=None,
         )

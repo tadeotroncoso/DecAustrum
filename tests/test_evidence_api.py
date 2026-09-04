@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.services.evidence as evidence_service
+from app.api_keys import generate_project_api_key
 from app.bootstrap import bootstrap_default_project
 from app.evidence import (
     load_evidence_bundle_archive,
@@ -20,7 +21,7 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
-TEST_API_KEY = "evidence-test-api-key"
+TEST_API_KEY = generate_project_api_key()
 TEST_ADMIN_API_KEY = "evidence-test-admin-api-key"
 
 client = TestClient(app)

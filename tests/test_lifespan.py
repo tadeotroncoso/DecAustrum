@@ -110,7 +110,6 @@ def test_lifespan_initializes_application(
 @pytest.mark.parametrize(
     "reused_environment_variable",
     [
-        "DECAUSTRUM_API_KEY",
         "DECAUSTRUM_ADMIN_API_KEY",
         "DECAUSTRUM_EXECUTION_GRANT_SECRET",
     ],
@@ -119,8 +118,8 @@ def test_production_startup_rejects_reused_webhook_secret_before_storage(
     monkeypatch,
     reused_environment_variable,
 ):
+    monkeypatch.delenv("DECAUSTRUM_API_KEY", raising=False)
     configured_values = {
-        "DECAUSTRUM_API_KEY": "p" * 32,
         "DECAUSTRUM_ADMIN_API_KEY": "a" * 32,
         "DECAUSTRUM_EXECUTION_GRANT_SECRET": "g" * 32,
     }

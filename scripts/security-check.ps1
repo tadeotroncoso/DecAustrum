@@ -95,6 +95,14 @@ try {
         throw "Secret scan requires at least one tracked file."
     }
 
+    # detect-secrets trims obsolete findings using native paths. Git emits
+    # forward slashes even on Windows, which can leave stale baseline entries.
+    $publishableFiles = @(
+        $publishableFiles | ForEach-Object {
+            $_.Replace([char]"/", [System.IO.Path]::DirectorySeparatorChar)
+        }
+    )
+
     & $detectSecretsHook `
         --baseline ".secrets.baseline" `
         --no-verify `

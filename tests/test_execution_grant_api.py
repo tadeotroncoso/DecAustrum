@@ -11,6 +11,7 @@ import app.evidence_store as evidence_store_module
 import app.services.execution_grants as execution_service
 from app.api_keys import (
     ProjectApiKeyRecord,
+    generate_project_api_key,
     get_api_key_prefix,
     hash_api_key,
 )
@@ -25,8 +26,8 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
-TEST_API_KEY = "execution-grant-project-key"
-TEST_REVIEWER_API_KEY = "execution-grant-reviewer-key"
+TEST_API_KEY = generate_project_api_key()
+TEST_REVIEWER_API_KEY = generate_project_api_key()
 TEST_REVIEWER_API_KEY_ID = UUID(
     "da64e49c-7f44-466b-9039-a7623261f315"
 )
