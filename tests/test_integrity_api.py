@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api_keys import generate_project_api_key
 from app.bootstrap import bootstrap_default_project
 from app.evidence_store import EvidenceStore
 from app.main import app, get_evidence_store
@@ -14,7 +15,7 @@ from app.policy_engine import POLICIES_DIRECTORY
 from app.policy_loader import load_policies
 from app.project_models import DEFAULT_PROJECT_ID
 
-TEST_API_KEY = "test-api-key"
+TEST_API_KEY = generate_project_api_key()
 TEST_ADMIN_API_KEY = "test-admin-api-key"
 
 test_client = TestClient(app)

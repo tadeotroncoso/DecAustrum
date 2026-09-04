@@ -193,8 +193,8 @@ fingerprints.
 The recorded actions are project creation and status changes, API-key creation
 and revocation, policy creation, update, disable and rollback, approval
 resolution or expiry, and execution-grant issuance, consumption, or expiry.
-Initial project templates and default-project bootstrap operations are
-attributed to `decaustrum-bootstrap` as a `SYSTEM` actor.
+Initial project templates and development/test default-project bootstrap
+operations are attributed to `decaustrum-bootstrap` as a `SYSTEM` actor.
 
 Administrative API clients can identify the operator with `X-Admin-Actor` and
 provide a ticket or explanation with `X-Audit-Reason`. Existing clients remain
@@ -212,6 +212,23 @@ SQLite transaction; an audit insert failure rolls back the domain mutation.
 API-key audit snapshots use public metadata only. Raw keys and key hashes are
 never included. SQLite foreign keys preserve project ownership, and triggers
 reject every `UPDATE` or `DELETE` against audit rows.
+
+Production startup does not bootstrap a configured project credential and rejects
+`DECAUSTRUM_API_KEY` in the server environment. The administrative provisioning
+service issues all new production project keys with 32 cryptographically random
+bytes plus an independent public selector. The selector indexes one record;
+scrypt (`N=2^14, r=8, p=5`, fresh 16-byte salt) verifies the complete
+credential. Only the salted verifier is stored, with no fast-hash alternative.
+At most two KDFs run concurrently per process, bounding their memory use.
+The selected record must be unrevoked and its project active both before and
+after verification. Development/test bootstrap uses the same current format.
+
+The pre-release migration retires all old SHA-256 credentials, removing their
+verifiers and secret-bearing prefixes from the active table while preserving
+key IDs, roles, prior revocations, projects, and immutable evidence. Existing
+clients would need replacement keys; no clients had used this pre-release.
+Current salted keys survive restarts. See `docs/operations.md` for migration,
+CPU-cost, backup, and rollback considerations.
 
 The administrator-only API supports paginated global or project-scoped
 listing, exact event retrieval, and filters for action, resource, actor, and

@@ -1188,19 +1188,19 @@ class EvidenceStore:
 
             return revoked
 
-    def get_active_project_by_api_key_hash(
+    def get_active_project_by_api_key(
         self,
-        key_hash: str,
+        api_key: str,
     ) -> Project | None:
-        return self.api_keys.get_active_project_by_hash(
-            key_hash
+        return self.api_keys.get_active_project_by_api_key(
+            api_key
         )
 
-    def get_active_api_key_principal_by_hash(
+    def get_active_api_key_principal(
         self,
-        key_hash: str,
+        api_key: str,
     ) -> ProjectApiKeyPrincipal | None:
-        return self.api_keys.get_active_principal_by_hash(key_hash)
+        return self.api_keys.get_active_principal_by_api_key(api_key)
 
     def save_webhook_subscription(
         self,

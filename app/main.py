@@ -45,6 +45,7 @@ from app.routers import (
 from app.runtime_config import RuntimeSettings
 from app.security import (
     ADMIN_API_KEY_ENVIRONMENT_VARIABLE,
+    API_KEY_ENVIRONMENT_VARIABLE,
     EXECUTION_GRANT_SECRET_ENVIRONMENT_VARIABLE,
     WEBHOOK_MASTER_SECRET_ENVIRONMENT_VARIABLE,
     get_configured_api_key,
@@ -146,7 +147,11 @@ async def lifespan(application: FastAPI):
     LOGGER.info("application_starting")
 
     try:
-        api_key = get_configured_api_key()
+        api_key = (
+            os.getenv(API_KEY_ENVIRONMENT_VARIABLE)
+            if settings.environment == "production"
+            else get_configured_api_key()
+        )
         settings.validate_secrets(
             project_api_key=api_key,
             admin_api_key=os.getenv(
@@ -162,17 +167,20 @@ async def lifespan(application: FastAPI):
         policy_templates = load_policies(POLICIES_DIRECTORY)
         evidence_store.initialize()
 
-        bootstrap_default_project(
-            store=evidence_store,
-            api_key=api_key,
-        )
+        # Production keys are issued only by the authenticated provisioning API.
+        # A configured string's length cannot establish its randomness.
+        if settings.environment != "production" and api_key is not None:
+            bootstrap_default_project(
+                store=evidence_store,
+                api_key=api_key,
+            )
 
-        evidence_store.seed_project_policies(
-            project_id=DEFAULT_PROJECT_ID,
-            policies=policy_templates,
-            seeded_at=datetime.now(timezone.utc),
-            audit_context=SYSTEM_BOOTSTRAP_AUDIT_CONTEXT,
-        )
+            evidence_store.seed_project_policies(
+                project_id=DEFAULT_PROJECT_ID,
+                policies=policy_templates,
+                seeded_at=datetime.now(timezone.utc),
+                audit_context=SYSTEM_BOOTSTRAP_AUDIT_CONTEXT,
+            )
 
         metrics.set_ready(True)
         LOGGER.info("application_ready")

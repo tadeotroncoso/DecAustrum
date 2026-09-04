@@ -168,6 +168,15 @@ jobs:
       - name: Validate Compose configuration
         run: |
           cp .env.example .env
+          python3 - <<'PY'
+          import secrets
+          from pathlib import Path
+
+          # Isolated smoke-test credential; never publish it in the job log.
+          key = f"dak_{secrets.token_hex(8)}.{secrets.token_urlsafe(32)}"
+          path = Path(".env")
+          path.write_text(path.read_text().replace("replace-with-a-project-api-key", key))
+          PY
           docker compose config --quiet
 
       - name: Build pinned runtime image

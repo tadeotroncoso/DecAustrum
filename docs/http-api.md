@@ -213,7 +213,11 @@ Every route in this section requires `X-Admin-API-Key`.
 | `DELETE` | `/v1/admin/projects/{project_id}/api-keys/{api_key_id}` | Revoke a project key. |
 
 Plaintext project keys are returned only when provisioned. The database stores
-key hashes, roles, and non-secret metadata. Omitting the request body when an
+salted scrypt verifiers, roles, and non-secret metadata. `key_prefix` is now the
+independent public selector, not a substring of the secret. Credentials are
+opaque to SDK clients; keep the whole returned string. Old SHA-256 credentials
+are retired during this pre-release upgrade and must be reissued.
+Omitting the request body when an
 additional key is created preserves the `RUNTIME` default. To create a review
 credential, send:
 

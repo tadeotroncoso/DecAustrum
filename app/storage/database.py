@@ -990,14 +990,34 @@ class SQLiteDatabase:
         ).fetchall()
         column_names = {column[1] for column in columns}
 
-        if "role" in column_names:
-            return
+        if "role" not in column_names:
+            connection.execute(
+                """
+                ALTER TABLE project_api_keys
+                ADD COLUMN role TEXT NOT NULL DEFAULT 'RUNTIME'
+                CHECK (role IN ('RUNTIME', 'REVIEWER'))
+                """
+            )
 
+        # Intentional pre-release credential reset. Never keep an unsalted
+        # SHA-256 verifier (or an old secret-bearing prefix) as a fallback.
+        # Preserve key identity, role, prior revocation, and all project evidence.
         connection.execute(
             """
-            ALTER TABLE project_api_keys
-            ADD COLUMN role TEXT NOT NULL DEFAULT 'RUNTIME'
-            CHECK (role IN ('RUNTIME', 'REVIEWER'))
+            UPDATE project_api_keys
+            SET revoked_at = COALESCE(
+                revoked_at, strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')
+            ),
+                key_hash = 'retired$' || api_key_id,
+                key_prefix = 'retired_' || api_key_id
+            WHERE length(key_hash) = 64
+                AND key_hash NOT GLOB '*[^0-9a-f]*'
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_project_api_key_selector
+            ON project_api_keys(key_prefix)
             """
         )
 

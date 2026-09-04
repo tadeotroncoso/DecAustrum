@@ -6,6 +6,8 @@ from app.api_keys import (
     ProjectApiKeyMetadata,
     ProjectApiKeyPrincipal,
     ProjectApiKeyRecord,
+    get_api_key_prefix,
+    verify_api_key,
 )
 from app.project_models import Project
 from app.storage.database import SQLiteDatabase
@@ -189,10 +191,14 @@ class ProjectApiKeyRepository:
                 revoked_at=revoked_at,
             )
 
-    def get_active_principal_by_hash(
+    def get_active_principal_by_api_key(
         self,
-        key_hash: str,
+        api_key: str,
     ) -> ProjectApiKeyPrincipal | None:
+        try:
+            key_prefix = get_api_key_prefix(api_key)
+        except ValueError:
+            return None
         with self.database.connect() as connection:
             connection.row_factory = sqlite3.Row
 
@@ -201,6 +207,7 @@ class ProjectApiKeyRepository:
                 SELECT
                     project_api_keys.api_key_id,
                     project_api_keys.role,
+                    project_api_keys.key_hash,
                     projects.project_id,
                     projects.name,
                     projects.status,
@@ -210,14 +217,29 @@ class ProjectApiKeyRepository:
                 INNER JOIN project_api_keys
                     ON project_api_keys.project_id
                     = projects.project_id
-                WHERE project_api_keys.key_hash = ?
+                WHERE project_api_keys.key_prefix = ?
                 AND project_api_keys.revoked_at IS NULL
                 AND projects.status = 'ACTIVE'
                 """,
-                (key_hash,),
+                (key_prefix,),
             ).fetchone()
 
-        if row is None:
+        if row is None or not verify_api_key(api_key, row["key_hash"]):
+            return None
+
+        # Hashing happens outside the connection. Recheck revocation and project
+        # status afterwards, so a revocation during the KDF is not ignored.
+        with self.database.connect() as connection:
+            active = connection.execute(
+                """
+                SELECT 1 FROM project_api_keys AS k
+                JOIN projects AS p ON p.project_id = k.project_id
+                WHERE k.api_key_id = ? AND k.key_hash = ?
+                AND k.revoked_at IS NULL AND p.status = 'ACTIVE'
+                """,
+                (row["api_key_id"], row["key_hash"]),
+            ).fetchone()
+        if active is None:
             return None
 
         return ProjectApiKeyPrincipal(
@@ -234,9 +256,9 @@ class ProjectApiKeyRepository:
             ),
         )
 
-    def get_active_project_by_hash(
+    def get_active_project_by_api_key(
         self,
-        key_hash: str,
+        api_key: str,
     ) -> Project | None:
-        principal = self.get_active_principal_by_hash(key_hash)
+        principal = self.get_active_principal_by_api_key(api_key)
         return principal.project if principal is not None else None

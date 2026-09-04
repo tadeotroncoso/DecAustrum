@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     StringConstraints,
     model_validator,
 )
@@ -57,6 +58,8 @@ class Project(BaseModel):
 
 
 class ProjectCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: ProjectName
 
 

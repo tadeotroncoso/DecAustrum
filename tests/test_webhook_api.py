@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api_keys import generate_project_api_key
 from app.bootstrap import bootstrap_default_project
 from app.dependencies import (
     get_evidence_store,
@@ -19,7 +20,7 @@ from app.webhooks import (
     verify_webhook_signature,
 )
 
-TEST_API_KEY = "test-api-key"
+TEST_API_KEY = generate_project_api_key()
 TEST_ADMIN_API_KEY = "test-admin-api-key"
 TEST_MASTER_SECRET = "webhook-api-master-secret-value-123"
 

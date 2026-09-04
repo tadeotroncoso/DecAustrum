@@ -10,6 +10,7 @@ from app.api_keys import (
     generate_project_api_key,
     get_api_key_prefix,
     hash_api_key,
+    verify_api_key,
 )
 from app.authorization_models import AuthorizationResponse
 from app.bootstrap import bootstrap_default_project
@@ -22,8 +23,8 @@ from app.project_models import (
     Project,
 )
 
-TEST_API_KEY = "test-api-key"
-TEST_REVIEWER_API_KEY = "test-reviewer-api-key"
+TEST_API_KEY = generate_project_api_key()
+TEST_REVIEWER_API_KEY = generate_project_api_key()
 TEST_REVIEWER_API_KEY_ID = UUID(
     "1f7ef1dd-64b1-4ac6-9080-2a60320931ba"
 )
@@ -1179,9 +1180,7 @@ def test_admin_can_provision_project(
     assert stored_key["key_prefix"] == (
         get_api_key_prefix(issued_api_key)
     )
-    assert stored_key["key_hash"] == (
-        hash_api_key(issued_api_key)
-    )
+    assert verify_api_key(issued_api_key, stored_key["key_hash"])
     assert stored_key["role"] == "RUNTIME"
     assert stored_key["key_hash"] != issued_api_key
 
