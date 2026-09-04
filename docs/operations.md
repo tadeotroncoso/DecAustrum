@@ -68,34 +68,58 @@ creation still requires `X-Admin-API-Key`.
    `POST /v1/admin/projects/{project_id}/api-keys` with the intended `role`.
    Callers cannot supply their own key in either provisioning request.
 
-All newly provisioned production project keys use `secrets.token_urlsafe(32)`:
-256 random bits, prefixed with `dak_`. Their SHA-256 digest supports indexed
-lookup; SHA-256 here is for high-entropy bearer tokens, **not human passwords**.
-Do not replace the generator with a format/length validator: a matching format
-cannot prove randomness. Local development/test bootstrap remains available
-for synthetic data and must not be used to pre-populate a production database.
+Project keys now have the format `dak_<16-hex-public-selector>.<43-char-secret>`.
+The selector is generated independently from the 32 random secret bytes and is
+the only key component exposed in metadata. A unique database index finds one
+candidate by this public selector; the selector alone never authenticates.
+The complete credential is verified with scrypt (`N=2^14, r=8, p=5`), a fresh
+16-byte random salt per key, and a constant-time comparison. These parameters
+follow the [OWASP scrypt guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt).
+The database
+stores the versioned salted verifier, **not a fast SHA-256 lookup digest**.
+Malformed/old keys and unsupported verifier parameters fail closed. Revocation
+and project status are checked again after the expensive verification.
+
+Production still requires the cryptographically secure generator: a matching
+format cannot prove randomness. Local development/test bootstrap also requires
+the current format. Generate its value using `generate_project_api_key()` as
+shown in the README, then set `DECAUSTRUM_API_KEY` locally. Do not pre-populate
+a production database with development credentials.
+
+Verification intentionally adds CPU cost to each authenticated request. Unknown
+selectors and malformed credentials do not run the KDF. Keep request-rate limits
+enabled, restrict admin access, and load-test the intended deployment. A process
+admits at most two simultaneous KDFs, each using approximately 16 MiB. No cache
+of raw keys or fast authentication digests bypasses this work factor.
 
 ### Upgrading an existing deployment
 
 - Remove `DECAUSTRUM_API_KEY` from the **server** configuration before starting
   this version; even a previously valid configured key now stops startup.
   Do not remove it from clients that need it to authenticate.
-- Keep the existing database. There is no hash or schema migration: active keys
-  continue to work, revoked keys stay revoked, and startup does not add keys or
-  overwrite existing project policies. It does not delete any data.
-- Previously registered manual/development keys are **not made stronger by this
-  upgrade**. Replace them using the rotation procedure below and revoke the old
-  keys, including on a database copied from development. This is required before
-  considering a legacy deployment to have only generated production keys.
-- Rolling back the application restores the old bootstrap behavior. It would
-  require restoring the old server configuration and can enroll manual keys
-  again; prefer a forward fix. Removing an environment value alone never revokes
-  a database key.
+- **Breaking pre-release change:** first startup retires every old unsalted
+  SHA-256 key, generated or manual. Those credentials must be replaced through
+  the administrator API; there is no legacy authentication fallback.
+- Keep the database. Migration preserves projects, policies, decision evidence,
+  audit history, key IDs, and roles. It marks legacy rows revoked (preserving
+  earlier revocation timestamps), replaces their old verifiers and secret-bearing
+  prefixes with non-authenticating retirement markers, and adds a unique public
+  selector index. Repeated initialization is idempotent. Current-format salted
+  keys survive restarts; revoked keys remain unusable.
+- Obtain new keys for existing projects with the administrator API. For local
+  development, replace the configured bootstrap key before startup; the old
+  value fails validation before storage is opened. Never reuse an old key.
+- Back up any important local evidence before upgrading. This migration changes
+  stored values but is **not secure erasure** of old backups, SQLite journals, or
+  historical audit metadata. Protect those files and do not reuse retired secrets.
+- An older application cannot authenticate the new verifiers. Prefer a forward
+  fix; restoring an old backup/configuration is an explicit rollback that loses
+  later changes and can reactivate old credentials. Do not roll back by changing
+  the application binary alone.
 
-CodeQL may still flag the generic hash helper because it also sees incoming,
-development, and legacy credentials. Review its result separately; passing CI
-or adding this provisioning boundary does not automatically close an alert or
-prove that every legacy key has been rotated.
+This reset was chosen before any deployment or client use. Validate GitHub's
+CodeQL results separately before merging; local tests do not prove an alert has
+been closed.
 
 ## Project API-key rotation
 

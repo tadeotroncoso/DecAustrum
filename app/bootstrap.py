@@ -27,11 +27,12 @@ def bootstrap_default_project(
     Rotation is complete only after the previous key is explicitly revoked
     through the administrative API. This preserves intentional key overlap.
     """
-    key_hash = hash_api_key(api_key)
+    # Validate before opening storage; legacy opaque credentials are not enrolled.
+    key_prefix = get_api_key_prefix(api_key)
 
     authenticated_project = (
-        store.get_active_project_by_api_key_hash(
-            key_hash
+        store.get_active_project_by_api_key(
+            api_key
         )
     )
 
@@ -47,8 +48,8 @@ def bootstrap_default_project(
     api_key_record = ProjectApiKeyRecord(
         api_key_id=uuid4(),
         project_id=DEFAULT_PROJECT_ID,
-        key_prefix=get_api_key_prefix(api_key),
-        key_hash=key_hash,
+        key_prefix=key_prefix,
+        key_hash=hash_api_key(api_key),
         role="RUNTIME",
         created_at=timestamp,
     )

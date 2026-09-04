@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main_module
-from app.api_keys import generate_project_api_key, hash_api_key
+from app.api_keys import generate_project_api_key, get_api_key_prefix
 from app.bootstrap import bootstrap_default_project
 from app.dependencies import get_evidence_store
 from app.evidence_store import EvidenceStore
@@ -101,8 +101,8 @@ def test_production_only_provisions_random_keys_through_admin_api(production, ca
         project_id = data["project"]["project_id"]
         first_key = data["api_key"]
         assert first_key.startswith("dak_")
-        assert len(base64.urlsafe_b64decode(first_key[4:] + "=")) == 32
-        principal = store.get_active_api_key_principal_by_hash(hash_api_key(first_key))
+        assert len(base64.urlsafe_b64decode(first_key.split(".")[1] + "=")) == 32
+        principal = store.get_active_api_key_principal(first_key)
         assert principal is not None
         assert principal.project.project_id == UUID(project_id)
         assert (
@@ -117,7 +117,7 @@ def test_production_only_provisions_random_keys_through_admin_api(production, ca
         assert second.status_code == 201
         second_key = second.json()["api_key"]
         assert second_key != first_key
-        assert len(base64.urlsafe_b64decode(second_key[4:] + "=")) == 32
+        assert len(base64.urlsafe_b64decode(second_key.split(".")[1] + "=")) == 32
         metadata = client.get(
             f"/v1/admin/projects/{project_id}/api-keys", headers=admin_headers
         )
@@ -126,7 +126,13 @@ def test_production_only_provisions_random_keys_through_admin_api(production, ca
         assert second_key not in metadata.text
         assert first_key not in caplog.text
         assert second_key not in caplog.text
-        assert hash_api_key(first_key) not in metadata.text
+        with store.database.connect() as connection:
+            stored_verifier = connection.execute(
+                "SELECT key_hash FROM project_api_keys WHERE key_prefix = ?",
+                (get_api_key_prefix(first_key),),
+            ).fetchone()[0]
+        assert stored_verifier not in metadata.text
+        assert stored_verifier not in caplog.text
 
 
 def test_production_refuses_caller_selected_credentials(production):
@@ -155,13 +161,13 @@ def test_production_refuses_caller_selected_credentials(production):
 
 
 @pytest.mark.parametrize("revoked", [False, True])
-def test_production_preserves_legacy_keys_without_reenrollment(production, revoked):
+def test_production_preserves_current_keys_without_reenrollment(production, revoked):
     application, store, _ = production
     store.initialize()
-    # Simulate a pre-upgrade database, not a new production enrollment path.
-    legacy_key = "legacy-" + "key-for-isolated-tests"
+    # A key already enrolled with the current salted verifier.
+    legacy_key = generate_project_api_key()
     project = bootstrap_default_project(store, legacy_key)
-    principal = store.get_active_api_key_principal_by_hash(hash_api_key(legacy_key))
+    principal = store.get_active_api_key_principal(legacy_key)
     assert principal is not None
     if revoked:
         store.revoke_project_api_key(
@@ -178,16 +184,21 @@ def test_production_preserves_legacy_keys_without_reenrollment(production, revok
 def test_project_key_generator_requests_32_random_bytes(monkeypatch):
     token = Mock(return_value="synthetic-generator-result")
     monkeypatch.setattr("app.api_keys.secrets.token_urlsafe", token)
-    assert generate_project_api_key() == "dak_synthetic-generator-result"
+    selector = Mock(return_value="0123456789abcdef")
+    monkeypatch.setattr("app.api_keys.secrets.token_hex", selector)
+    assert generate_project_api_key() == (
+        "dak_0123456789abcdef.synthetic-generator-result"
+    )
     token.assert_called_once_with(32)
+    selector.assert_called_once_with(8)
 
 
-def test_production_can_rotate_legacy_key_without_server_configuration(production):
+def test_production_can_rotate_current_key_without_server_configuration(production):
     application, store, admin_headers = production
     store.initialize()
-    legacy_key = "legacy-" + "key-for-isolated-tests"
+    legacy_key = generate_project_api_key()
     project = bootstrap_default_project(store, legacy_key)
-    old = store.get_active_api_key_principal_by_hash(hash_api_key(legacy_key))
+    old = store.get_active_api_key_principal(legacy_key)
     assert old is not None
     with TestClient(application, base_url="https://testserver") as client:
         issued = client.post(

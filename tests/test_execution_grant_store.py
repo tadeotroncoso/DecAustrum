@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.api_keys import generate_project_api_key
 from app.approval_models import ApprovalRecord
 from app.audit_models import AuditContext
 from app.authorization_models import (
@@ -50,7 +51,7 @@ def build_authorization(
 
 
 def seed_pending(store: EvidenceStore):
-    bootstrap_default_project(store=store, api_key="store-api-key")
+    bootstrap_default_project(store=store, api_key=generate_project_api_key())
     authorization = build_authorization()
     approval = ApprovalRecord(
         decision_id=authorization.decision_id,

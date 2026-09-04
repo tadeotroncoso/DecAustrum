@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.api_keys import ProjectApiKeyPrincipal, hash_api_key
+from app.api_keys import ProjectApiKeyPrincipal
 from app.evidence_store import EvidenceStore
 from app.project_models import Project
 from app.runtime_config import RuntimeConfigurationError
@@ -37,7 +37,7 @@ def test_authenticate_project_returns_project():
     )
 
     store = Mock(spec=EvidenceStore)
-    store.get_active_api_key_principal_by_hash.return_value = (
+    store.get_active_api_key_principal.return_value = (
         principal
     )
 
@@ -48,8 +48,8 @@ def test_authenticate_project_returns_project():
 
     assert authenticated_project == project
 
-    store.get_active_api_key_principal_by_hash.assert_called_once_with(
-        hash_api_key(api_key)
+    store.get_active_api_key_principal.assert_called_once_with(
+        api_key
     )
 
 
@@ -68,12 +68,12 @@ def test_authenticate_project_rejects_missing_key():
         "message": "A valid API key is required.",
     }
 
-    store.get_active_api_key_principal_by_hash.assert_not_called()
+    store.get_active_api_key_principal.assert_not_called()
 
 
 def test_authenticate_project_rejects_unknown_key():
     store = Mock(spec=EvidenceStore)
-    store.get_active_api_key_principal_by_hash.return_value = (
+    store.get_active_api_key_principal.return_value = (
         None
     )
 

@@ -216,11 +216,19 @@ reject every `UPDATE` or `DELETE` against audit rows.
 Production startup does not bootstrap a configured project credential and rejects
 `DECAUSTRUM_API_KEY` in the server environment. The administrative provisioning
 service issues all new production project keys with 32 cryptographically random
-bytes. SHA-256 is an indexed token digest, not a human-password verifier. Existing
-database keys remain compatible, including legacy manual keys until explicitly
-rotated and revoked; restarting never reactivates a revoked key. Development/test
-bootstrap is for isolated synthetic environments only. See the production
-provisioning and upgrade contract in `docs/operations.md`.
+bytes plus an independent public selector. The selector indexes one record;
+scrypt (`N=2^14, r=8, p=5`, fresh 16-byte salt) verifies the complete
+credential. Only the salted verifier is stored, with no fast-hash alternative.
+At most two KDFs run concurrently per process, bounding their memory use.
+The selected record must be unrevoked and its project active both before and
+after verification. Development/test bootstrap uses the same current format.
+
+The pre-release migration retires all old SHA-256 credentials, removing their
+verifiers and secret-bearing prefixes from the active table while preserving
+key IDs, roles, prior revocations, projects, and immutable evidence. Existing
+clients would need replacement keys; no clients had used this pre-release.
+Current salted keys survive restarts. See `docs/operations.md` for migration,
+CPU-cost, backup, and rollback considerations.
 
 The administrator-only API supports paginated global or project-scoped
 listing, exact event retrieval, and filters for action, resource, actor, and
