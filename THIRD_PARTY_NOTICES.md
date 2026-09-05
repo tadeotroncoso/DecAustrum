@@ -21,12 +21,12 @@ identify the upstream projects; upstream license files are authoritative.
 | `idna` | 3.18 | BSD-3-Clause | [kjd/idna](https://github.com/kjd/idna) |
 | `pydantic` | 2.13.4 | MIT | [pydantic/pydantic](https://github.com/pydantic/pydantic) |
 | `pydantic-core` | 2.46.4 | MIT | [pydantic/pydantic-core](https://github.com/pydantic/pydantic-core) |
-| `python-dotenv` | 1.2.2 | BSD-3-Clause | [theskumar/python-dotenv](https://github.com/theskumar/python-dotenv) |
+| `python-dotenv` | 1.2.3 | BSD-3-Clause | [theskumar/python-dotenv](https://github.com/theskumar/python-dotenv) |
 | `PyYAML` | 6.0.3 | MIT | [yaml/pyyaml](https://github.com/yaml/pyyaml) |
 | `starlette` | 1.6.0 | BSD-3-Clause | [Kludex/starlette](https://github.com/Kludex/starlette) |
 | `typing-extensions` | 4.16.0 | PSF-2.0 | [python/typing_extensions](https://github.com/python/typing_extensions) |
 | `typing-inspection` | 0.4.2 | MIT | [pydantic/typing-inspection](https://github.com/pydantic/typing-inspection) |
-| `uvicorn` | 0.52.1 | BSD-3-Clause | [Kludex/uvicorn](https://github.com/Kludex/uvicorn) |
+| `uvicorn` | 0.52.4 | BSD-3-Clause | [Kludex/uvicorn](https://github.com/Kludex/uvicorn) |
 | `httpx` | 0.28.1 | BSD-3-Clause | [encode/httpx](https://github.com/encode/httpx) |
 | `httpcore` | 1.0.9 | BSD-3-Clause | [encode/httpcore](https://github.com/encode/httpcore) |
 | `certifi` | 2026.7.22 | MPL-2.0 | [certifi/python-certifi](https://github.com/certifi/python-certifi) |
