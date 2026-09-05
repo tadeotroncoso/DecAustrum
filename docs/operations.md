@@ -406,7 +406,7 @@ immediately; deleting it from the current tree or rewriting Git history does
 not make the credential safe.
 
 `Dockerfile` pins the official Python 3.12 Alpine 3.23 image by digest. It
-installs the exact Alpine `libuuid=2.41.6-r0` security update from the signed
+installs the exact Alpine `libuuid=2.41.6-r1` security update from the signed
 Alpine 3.23 repositories because the pinned base contains `2.41.4-r0`.
 Alpine records the fixes for CVE-2026-53612, CVE-2026-53613, CVE-2026-53614,
 CVE-2026-76642, CVE-2026-78408, and CVE-2026-78410 in its

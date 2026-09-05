@@ -19,8 +19,8 @@ identify the upstream projects; upstream license files are authoritative.
 | `fastapi` | 0.141.1 | MIT | [fastapi/fastapi](https://github.com/fastapi/fastapi) |
 | `h11` | 0.16.0 | MIT | [python-hyper/h11](https://github.com/python-hyper/h11) |
 | `idna` | 3.18 | BSD-3-Clause | [kjd/idna](https://github.com/kjd/idna) |
-| `pydantic` | 2.13.4 | MIT | [pydantic/pydantic](https://github.com/pydantic/pydantic) |
-| `pydantic-core` | 2.46.4 | MIT | [pydantic/pydantic-core](https://github.com/pydantic/pydantic-core) |
+| `pydantic` | 2.13.5 | MIT | [pydantic/pydantic](https://github.com/pydantic/pydantic) |
+| `pydantic-core` | 2.46.5 | MIT | [pydantic/pydantic-core](https://github.com/pydantic/pydantic-core) |
 | `python-dotenv` | 1.2.3 | BSD-3-Clause | [theskumar/python-dotenv](https://github.com/theskumar/python-dotenv) |
 | `PyYAML` | 6.0.3 | MIT | [yaml/pyyaml](https://github.com/yaml/pyyaml) |
 | `starlette` | 1.6.0 | BSD-3-Clause | [Kludex/starlette](https://github.com/Kludex/starlette) |
@@ -44,6 +44,6 @@ The runtime container derives from the pinned official
 material, and operating-system packages in that image remain subject to their
 own licenses and notices; the DecAustrum license does not replace them.
 
-The container additionally pins Alpine's `libuuid` package to `2.41.6-r0` for
+The container additionally pins Alpine's `libuuid` package to `2.41.6-r1` for
 security fixes. This util-linux library is distributed under BSD-3-Clause;
 see the [Alpine package record](https://pkgs.alpinelinux.org/package/v3.23/main/x86_64/libuuid).
