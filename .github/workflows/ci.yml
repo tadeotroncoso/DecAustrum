@@ -236,7 +236,7 @@ jobs:
             exit 1
           fi
 
-          docker exec "$container_name" apk info --exists 'libuuid=2.41.6-r0'
+          docker exec "$container_name" apk info --exists 'libuuid=2.41.6-r1'
 
           docker exec --interactive "$container_name" python - <<'PY'
           import json

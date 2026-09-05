@@ -44,6 +44,6 @@ The runtime container derives from the pinned official
 material, and operating-system packages in that image remain subject to their
 own licenses and notices; the DecAustrum license does not replace them.
 
-The container additionally pins Alpine's `libuuid` package to `2.41.6-r0` for
+The container additionally pins Alpine's `libuuid` package to `2.41.6-r1` for
 security fixes. This util-linux library is distributed under BSD-3-Clause;
 see the [Alpine package record](https://pkgs.alpinelinux.org/package/v3.23/main/x86_64/libuuid).
