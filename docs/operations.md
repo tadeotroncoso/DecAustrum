@@ -406,8 +406,18 @@ immediately; deleting it from the current tree or rewriting Git history does
 not make the credential safe.
 
 `Dockerfile` pins the official Python 3.12 Alpine 3.23 image by digest. It
-installs the hash-verified pip bootstrap and runtime locks using binary wheels
-only, checks the installed dependencies with `pip check`, then uninstalls pip
+installs the exact Alpine `libuuid=2.41.6-r0` security update from the signed
+Alpine 3.23 repositories because the pinned base contains `2.41.4-r0`.
+Alpine records the fixes for CVE-2026-53612, CVE-2026-53613, CVE-2026-53614,
+CVE-2026-76642, CVE-2026-78408, and CVE-2026-78410 in its
+[security database](https://secdb.alpinelinux.org/v3.23/main.json).
+The build fails if the pinned package is unavailable; review and update the
+pin or adopt a corrected base digest rather than falling back to an unpinned
+package. Remove the explicit package update and its CI version assertion only
+after a replacement base has been verified to contain the fixes.
+
+The build installs the hash-verified pip bootstrap and runtime locks using
+binary wheels only, checks the installed dependencies with `pip check`, then uninstalls pip
 and removes `ensurepip`, including its bundled installer wheel, in the same
 build step. The final runtime contains neither pip's vendored dependencies nor
 package installation tools. Dependency changes require rebuilding the image;
@@ -431,7 +441,8 @@ secret gates on every push and pull request. It also runs CodeQL, rejects newly
 introduced high-severity dependencies in pull requests, validates Compose,
 scans source and the runtime image, starts the image with a read-only root and
 dedicated data volume, and waits for its actual healthcheck to become healthy.
-The smoke test rejects installer modules, leftover installer metadata, and pip
+The smoke test checks that the exact corrected `libuuid` package is installed.
+It rejects installer modules, leftover installer metadata, and pip
 commands in the final image. It verifies the non-root identity, native Python
 dependencies, TLS certificate store, SQLite, a persisted authorization response, and a
 one-shot webhook worker run. The image gate rejects **all HIGH and CRITICAL

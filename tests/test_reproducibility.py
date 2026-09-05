@@ -397,6 +397,7 @@ def test_container_smoke_covers_native_runtime_storage_and_worker():
         '"$volume_name:/app/data"',
         ".State.Health.Status",
         "os.geteuid() == 10001",
+        "apk info --exists 'libuuid=2.41.6-r0'",
         "import pydantic_core",
         "import yaml",
         "ssl.create_default_context().get_ca_certs()",

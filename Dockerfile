@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Apply Alpine's util-linux security fixes until the pinned base includes them.
+RUN apk add --no-cache libuuid=2.41.6-r0
+
 RUN addgroup -S -g 10001 decaustrum \
     && adduser -S -D -H -u 10001 -G decaustrum \
         -h /nonexistent -s /sbin/nologin decaustrum
