@@ -18,6 +18,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # Keep Python on the supported minor; review runtime migrations separately.
+    # Patch releases and same-tag digest updates remain eligible.
+    ignore:
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
 
   - package-ecosystem: github-actions
     directory: /
