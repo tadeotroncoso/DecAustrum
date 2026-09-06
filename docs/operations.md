@@ -454,6 +454,19 @@ not persist credentials, and every external action is pinned to an immutable
 commit SHA. Dependabot proposes dependency, container, and action updates; an
 update is not accepted until the clean build and full CI gate pass.
 
+The Docker updater ignores SemVer major and minor updates only for the official
+`python` image, keeping proposals on the supported Python 3.12 runtime line.
+Python patch releases and same-tag digest updates remain eligible; the pip and
+GitHub Actions updaters remain unrestricted. This follows GitHub's documented
+[Dependabot ignore options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#ignore).
+The policy does not change the running interpreter or disable any security
+scan. A Python patch update still requires synchronizing `.python-version`,
+the Dockerfile, version-specific tests, and notices before the full gate can
+pass. A future runtime-minor migration must update the runtime contract,
+bootstrap scripts, locks, tests, documentation, and this policy together.
+Reassess the supported runtime before its security support ends, or earlier
+if a required dependency or security fix needs a newer Python version.
+
 When intentionally updating dependencies:
 
 1. change the direct version in the matching `.in` file and `pyproject.toml`;

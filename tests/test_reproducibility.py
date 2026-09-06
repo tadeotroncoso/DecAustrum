@@ -101,6 +101,47 @@ def test_python_and_backend_versions_are_single_line_pins():
     ]
 
 
+@pytest.mark.parametrize(
+    ("ecosystem", "directory", "pull_request_limit"),
+    [
+        ("pip", "/", 5),
+        ("pip", "/sdk/python", 5),
+        ("docker", "/", 3),
+        ("github-actions", "/", 3),
+    ],
+)
+def test_dependabot_only_limits_python_runtime_upgrades(
+    ecosystem, directory, pull_request_limit,
+):
+    configuration = yaml.safe_load(
+        (REPOSITORY_ROOT / ".github" / "dependabot.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert configuration["version"] == 2
+    matching_updates = [
+        update for update in configuration["updates"]
+        if update["package-ecosystem"] == ecosystem
+        and update["directory"] == directory
+    ]
+    expected_update = {
+        "package-ecosystem": ecosystem,
+        "directory": directory,
+        "schedule": {"interval": "weekly"},
+        "open-pull-requests-limit": pull_request_limit,
+    }
+    if ecosystem == "docker":
+        expected_update["ignore"] = [{
+            "dependency-name": "python",
+            "update-types": [
+                "version-update:semver-major",
+                "version-update:semver-minor",
+            ],
+        }]
+
+    assert matching_updates == [expected_update]
+
+
 @pytest.mark.parametrize("name", ["bootstrap", "runtime", "dev"])
 def test_pip_compile_locks_use_dependabot_compatible_names(name):
     manifest = REQUIREMENTS / f"{name}.in"
